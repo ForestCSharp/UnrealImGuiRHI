@@ -1,0 +1,34 @@
+#include "/Engine/Public/Platform.ush"
+
+struct VS_INPUT
+{
+	float2 pos : ATTRIBUTE0;
+	float2 uv  : ATTRIBUTE1;
+	float4 col : ATTRIBUTE2;
+};
+
+struct PS_INPUT
+{
+	float4 pos : SV_POSITION;
+	float4 col : COLOR0;
+	float2 uv  : TEXCOORD0;
+};
+
+float4x4 ImGuiProjectionMatrix;
+void MainVS(
+    in VS_INPUT Input,
+    out PS_INPUT Output
+)
+{
+	Output.pos = mul(ImGuiProjectionMatrix, float4(Input.pos.xy, 0.f, 1.f));
+	Output.col = Input.col;
+	Output.uv  = Input.uv;
+}
+ 
+Texture2D ImGuiFontTexture;
+SamplerState ImGuiFontSampler;
+
+float4 MainPS(in PS_INPUT Input) : SV_Target0
+{
+    return Input.col * ImGuiFontTexture.Sample(ImGuiFontSampler, Input.uv);
+}

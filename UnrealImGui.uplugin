@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "UnrealImGui",
+	"Description": "DearImGui Unreal Integration",
+	"Category": "Other",
+	"CreatedBy": "Forest Sharp",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "UnrealImGui",
+			"Type": "Runtime",
+			"LoadingPhase" : "PostConfigInit"
+		}
+	]
+}
