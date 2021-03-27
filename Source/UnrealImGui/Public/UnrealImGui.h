@@ -19,6 +19,7 @@ public:
 	virtual void ShutdownModule() override;
 };
 
+//Vertex Shader for ImGui
 class FImGuiVS : public FGlobalShader
 {
     DECLARE_SHADER_TYPE(FImGuiVS, Global);
@@ -41,7 +42,7 @@ class FImGuiVS : public FGlobalShader
         return true;
     }
 
-	void SetProjectionMatrix(FRHICommandList& RHICmdList, const FMatrix& InMatrix, ERHIFeatureLevel::Type FeatureLevel)
+	void SetProjectionMatrix(FRHICommandList& RHICmdList, const FMatrix& InMatrix, const ERHIFeatureLevel::Type FeatureLevel) const
     {
     	const auto GlobalShaderMap = GetGlobalShaderMap(FeatureLevel);
     	const TShaderMapRef<FImGuiVS> VertexShader(GlobalShaderMap); //FCS FIXME: Shouldn't need to do this
@@ -53,6 +54,7 @@ private:
 	LAYOUT_FIELD(FShaderParameter, ImGuiProjectionMatrix);
 };
 
+//Pixel Shader for ImGui
 class FImGuiPS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FImGuiPS, Global);
@@ -82,7 +84,7 @@ class FImGuiPS : public FGlobalShader
 		return true;
 	}
 
-	void SetFontTexture(FRHICommandList& RHICmdList, const FTexture2DRHIRef& InTexture2D, const FSamplerStateRHIRef& InSamplerState, ERHIFeatureLevel::Type FeatureLevel)
+	void SetFontTexture(FRHICommandList& RHICmdList, const FTexture2DRHIRef& InTexture2D, const FSamplerStateRHIRef& InSamplerState, const ERHIFeatureLevel::Type FeatureLevel) const
 	{
 		const auto GlobalShaderMap = GetGlobalShaderMap(FeatureLevel);
 		const TShaderMapRef<FImGuiPS> PixelShader(GlobalShaderMap); //FCS FIXME: Shouldn't need to do this
@@ -90,8 +92,6 @@ class FImGuiPS : public FGlobalShader
 	}
 
 private:
-
-	// LAYOUT_FIELD(FShaderResourceParameter, FontTextureParameter);
 
 	LAYOUT_FIELD(FShaderResourceParameter, ImGuiFontTexture);
 	LAYOUT_FIELD(FShaderResourceParameter, ImGuiFontSampler);
@@ -123,9 +123,8 @@ namespace UnrealImGui
 
 	void Initialize_RenderThread(FRHICommandListImmediate& RHICmdList, const TArray<unsigned char>& FontTextureData, int32 Width, int32 Height);
 	
-	void Render(const FViewport* const Viewport);
-	void RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, const FUnrealImGuiDrawData& ImGuiDrawData, const
-	                              FTexture2DRHIRef& RenderTargetTexture);
+	void Render_GameThread(const FViewport* const Viewport);
+	void Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, const FUnrealImGuiDrawData& ImGuiDrawData, const FTexture2DRHIRef& RenderTargetTexture);
 	
 	void ShutdownImGui_RenderThread();
 }

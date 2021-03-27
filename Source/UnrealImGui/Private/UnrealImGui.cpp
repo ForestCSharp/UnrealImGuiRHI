@@ -30,8 +30,8 @@ IMPLEMENT_SHADER_TYPE(, FImGuiPS, TEXT("/Plugin/UnrealImGui/Private/ImGui.usf"),
 
 //GameThread Globals
 TWeakObjectPtr<UGameViewportClient> OwningGameViewportClient = nullptr;
-ImGuiContext* ImGuiContextPtr = nullptr;
-FDelegateHandle ViewportRenderedDelegateHandle;
+static ImGuiContext* ImGuiContextPtr = nullptr; //FCS TODO: FIXME: Thread-Safe Shared Ptr
+static FDelegateHandle ViewportRenderedDelegateHandle;
 
 //RenderThread Globals
 FVertexBufferRHIRef ImguiVertexBuffer;
@@ -71,12 +71,27 @@ void UnrealImGui::Initialize(UGameViewportClient* InGameViewportClient)
 	{
 		if (UnrealImGui::ShowImGui)
 		{
-			UnrealImGui::Render(InViewport);
+			UnrealImGui::Render_GameThread(InViewport);
 			ImGui::NewFrame();
 		}
 	});
+	
+	InGameViewportClient->OnInputKey().AddLambda([](const FInputKeyEventArgs& InputKeyEvent)
+	{
+		const uint32* KeyCodePtr;
+		const uint32* CharCodePtr;
+		FInputKeyManager::Get().GetCodesFromKey(InputKeyEvent.Key, KeyCodePtr, CharCodePtr);
 
-	//TODO: OnInputKey?
+		//FCS TODO: Fix this
+		if (CharCodePtr != nullptr && InputKeyEvent.Event != IE_Released)
+		{
+			ImGui::GetIO().AddInputCharacterUTF16(*CharCodePtr);
+		}
+		if (KeyCodePtr != nullptr)
+		{
+			ImGui::GetIO().KeysDown[*KeyCodePtr] = InputKeyEvent.Event == IE_Pressed;
+		}
+	});
 
 	//TODO: OnCloseRequested?
 }
@@ -100,11 +115,11 @@ void UnrealImGui::Shutdown(UGameViewportClient* InGameViewportClient)
     );
 }
 
-void UnrealImGui::Render(const FViewport* const Viewport)
+void UnrealImGui::Render_GameThread(const FViewport* const Viewport)
 {
 	if (ImGuiContextPtr == nullptr)
 	{
-		//FCS FIXME: UE_LOG Warning
+		//FCS TODO: UE_LOG Warning
 		return;
 	}
 	
@@ -112,7 +127,7 @@ void UnrealImGui::Render(const FViewport* const Viewport)
 	const auto& ViewportSize = Viewport->GetRenderTargetTextureSizeXY();
 	IO.DisplaySize.x = ViewportSize.X;
 	IO.DisplaySize.y = ViewportSize.Y;
-	//TODO: DPI Scale
+	//FCS TODO: DPI Scale
 
 	if (OwningGameViewportClient.IsValid())
 	{
@@ -122,14 +137,21 @@ void UnrealImGui::Render(const FViewport* const Viewport)
 		}
 	}
 
+	//Mouse Input
 	IO.MousePos.x = Viewport->GetMouseX();
 	IO.MousePos.y = Viewport->GetMouseY();
 	IO.MouseDown[0] = Viewport->KeyState(EKeys::LeftMouseButton);
 	IO.MouseDown[1] = Viewport->KeyState(EKeys::RightMouseButton);
 	IO.MouseDown[2] = Viewport->KeyState(EKeys::MiddleMouseButton);
-	//FCS TODO: More Key States
-
 	//FCS TODO: Mouse Wheel Data
+
+	//Modifier Keys
+	IO.KeyCtrl = Viewport->KeyState(EKeys::LeftControl) || Viewport->KeyState(EKeys::RightControl);
+	IO.KeyShift = Viewport->KeyState(EKeys::LeftShift) || Viewport->KeyState(EKeys::RightShift);
+	IO.KeyAlt = Viewport->KeyState(EKeys::LeftAlt) || Viewport->KeyState(EKeys::RightAlt);
+	IO.KeySuper = Viewport->KeyState(EKeys::LeftCommand) || Viewport->KeyState(EKeys::RightCommand);
+	
+	//FCS TODO: Nav Input (Gamepad)
 	
 	ImGui::Render();
 	
@@ -153,13 +175,13 @@ void UnrealImGui::Render(const FViewport* const Viewport)
 	UnrealImGuiDrawData.DisplaySize = ImGuiDrawData->DisplaySize;
 	UnrealImGuiDrawData.FramebufferScale = ImGuiDrawData->FramebufferScale;
 
-	const ERHIFeatureLevel::Type FeatureLevel = ERHIFeatureLevel::SM5; //FCS FIXME:
+	const ERHIFeatureLevel::Type FeatureLevel = GWorld->FeatureLevel; //FCS TODO: FIXME:
 	
 	ENQUEUE_RENDER_COMMAND(RenderImGuiCmd)(
 	    [UnrealImGuiDrawData, FeatureLevel, Viewport](FRHICommandListImmediate& RHICmdList)
 		{
 	    	const FTexture2DRHIRef& RenderTargetTexture = Viewport->GetRenderTargetTexture();
-		    RenderImGui_RenderThread(RHICmdList, FeatureLevel, UnrealImGuiDrawData, RenderTargetTexture);
+		    Render_RenderThread(RHICmdList, FeatureLevel, UnrealImGuiDrawData, RenderTargetTexture);
 		}
 	);
 }
@@ -187,9 +209,43 @@ void UnrealImGui::Initialize_RenderThread(FRHICommandListImmediate& RHICmdList, 
 	SamplerStateCreateInfo.MaxAnisotropy = 1.0f;
 	SamplerStateCreateInfo.SamplerComparisonFunction = SCF_Never;
 	ImGuiFontSampler = RHICmdList.CreateSamplerState(SamplerStateCreateInfo);
+
+	auto ImGuiKeyMap = [&](ImGuiKey_ ImGuiKey, const FKey& UnrealKey)
+	{
+		const uint32* KeyCodePtr;
+		const uint32* CharCodePtr;
+		FInputKeyManager::Get().GetCodesFromKey(UnrealKey, KeyCodePtr, CharCodePtr);
+		if (KeyCodePtr != nullptr)
+		{
+			ImGui::GetIO().KeyMap[ImGuiKey] = *KeyCodePtr;
+		}
+	};
+	
+	ImGuiKeyMap(ImGuiKey_Tab, EKeys::Tab);
+	ImGuiKeyMap(ImGuiKey_LeftArrow, EKeys::Left);
+	ImGuiKeyMap(ImGuiKey_RightArrow, EKeys::Right);
+	ImGuiKeyMap(ImGuiKey_UpArrow, EKeys::Up);
+	ImGuiKeyMap(ImGuiKey_DownArrow, EKeys::Down);
+	ImGuiKeyMap(ImGuiKey_PageUp, EKeys::PageUp);
+	ImGuiKeyMap(ImGuiKey_PageDown, EKeys::PageDown);
+	ImGuiKeyMap(ImGuiKey_Home, EKeys::Home);
+	ImGuiKeyMap(ImGuiKey_End, EKeys::End);
+	ImGuiKeyMap(ImGuiKey_Insert, EKeys::Insert);
+	ImGuiKeyMap(ImGuiKey_Delete, EKeys::Delete);
+	ImGuiKeyMap(ImGuiKey_Backspace, EKeys::BackSpace);
+	ImGuiKeyMap(ImGuiKey_Space, EKeys::SpaceBar);
+	ImGuiKeyMap(ImGuiKey_Enter, EKeys::Enter);
+	ImGuiKeyMap(ImGuiKey_Escape, EKeys::Escape);
+	// ImGuiKeyMap(ImGuiKey_KeyPadEnter, EKeys::Enter);
+	ImGuiKeyMap(ImGuiKey_A, EKeys::A);
+	ImGuiKeyMap(ImGuiKey_C, EKeys::C);
+	ImGuiKeyMap(ImGuiKey_V, EKeys::V);
+	ImGuiKeyMap(ImGuiKey_X, EKeys::X);
+	ImGuiKeyMap(ImGuiKey_Y, EKeys::Y);
+	ImGuiKeyMap(ImGuiKey_Z, EKeys::Z);
 }
 
-void UnrealImGui::RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, const FUnrealImGuiDrawData& ImGuiDrawData, const FTexture2DRHIRef& RenderTargetTexture)
+void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, const FUnrealImGuiDrawData& ImGuiDrawData, const FTexture2DRHIRef& RenderTargetTexture)
 {
 	SCOPED_DRAW_EVENT(RHICmdList, ImGui)
 	
@@ -232,103 +288,104 @@ void UnrealImGui::RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList,
 
 	// Declare a pipeline state object that holds all the rendering state
 	FGraphicsPipelineStateInitializer PSOInitializer;
+	PSOInitializer.RenderTargetsEnabled = 1;
+	PSOInitializer.RenderTargetFormats[0] = RenderTargetTexture->GetFormat();
+	PSOInitializer.RenderTargetFlags[0] = RenderTargetTexture->GetFlags();
 
 	//FCS FIXME: Is there a Debug Render target that draws over everything? (RHICmdList.BeginRenderPass?) see below
 	FRHIRenderPassInfo RenderPassInfo(RenderTargetTexture, ERenderTargetActions::Load_Store);
 	RHICmdList.BeginRenderPass(RenderPassInfo, TEXT("UnrealImGui"));
-	// RHICmdList.ApplyCachedRenderTargets(PSOInitializer);
-	//FCS TODO: Set Viewport?
-
-	PSOInitializer.PrimitiveType = PT_TriangleList;
-
-	FVertexDeclarationElementList Elements;
-	uint32 Stride = sizeof(ImDrawVert);
-	Elements.Add(FVertexElement(0, STRUCT_OFFSET(ImDrawVert, pos), VET_Float2, 0, Stride));
-	Elements.Add(FVertexElement(0, STRUCT_OFFSET(ImDrawVert, uv), VET_Float2, 1, Stride));
-	Elements.Add(FVertexElement(0, STRUCT_OFFSET(ImDrawVert, col), VET_UByte4N, 2, Stride));
-	
-	PSOInitializer.BoundShaderState.VertexDeclarationRHI = PipelineStateCache::GetOrCreateVertexDeclaration(Elements);
-	PSOInitializer.BoundShaderState.VertexShaderRHI = MyVS.GetVertexShader();
-	PSOInitializer.BoundShaderState.PixelShaderRHI = MyPS.GetPixelShader();
-	PSOInitializer.RasterizerState = TStaticRasterizerState<FM_Solid, CM_None>::GetRHI();
-	PSOInitializer.BlendState = TStaticBlendState<
-		/*EColorWriteMask RT0ColorWriteMask = */ CW_RGBA,
-	    /*EBlendOperation RT0ColorBlendOp = */ BO_Add,
-	    /*EBlendFactor    RT0ColorSrcBlend = */ BF_SourceAlpha,
-	    /*EBlendFactor    RT0ColorDestBlend = */ BF_InverseSourceAlpha,
-	    /*EBlendOperation RT0AlphaBlendOp = */ BO_Add,
-	    /*EBlendFactor    RT0AlphaSrcBlend = */ BF_InverseSourceAlpha,
-	    /*EBlendFactor    RT0AlphaDestBlend = */ BF_Zero
-	>::GetRHI();
-	PSOInitializer.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
-
-	SetGraphicsPipelineState(RHICmdList, PSOInitializer); //FCS TODO: Graphics PSOs can only be set inside a RenderPass!
-
-	// Setup Our Parameters. This has to happen after SetGraphicsPipelineState
 	{
-		//Setup projection matrix	
-		const float L = ImGuiDrawData.DisplayPos.x;
-		const float R = ImGuiDrawData.DisplayPos.x + ImGuiDrawData.DisplaySize.x;
-		const float T = ImGuiDrawData.DisplayPos.y;
-		const float B = ImGuiDrawData.DisplayPos.y + ImGuiDrawData.DisplaySize.y;
+		PSOInitializer.PrimitiveType = PT_TriangleList;
 
-		const FMatrix OrthographicProjection(
-            FPlane(2.0f/(R-L),   0.0f,           0.0f,       0.0f),
-            FPlane(0.0f,         2.0f/(T-B),     0.0f,       0.0f),
-            FPlane(0.0f,         0.0f,           0.5f,       0.0f),
-            FPlane((R+L)/(L-R),  (T+B)/(B-T),    0.5f,       1.0f)
-        );
+		FVertexDeclarationElementList Elements;
+		uint32 Stride = sizeof(ImDrawVert);
+		Elements.Add(FVertexElement(0, STRUCT_OFFSET(ImDrawVert, pos), VET_Float2, 0, Stride));
+		Elements.Add(FVertexElement(0, STRUCT_OFFSET(ImDrawVert, uv), VET_Float2, 1, Stride));
+		Elements.Add(FVertexElement(0, STRUCT_OFFSET(ImDrawVert, col), VET_UByte4N, 2, Stride));
+	
+		PSOInitializer.BoundShaderState.VertexDeclarationRHI = PipelineStateCache::GetOrCreateVertexDeclaration(Elements);
+		PSOInitializer.BoundShaderState.VertexShaderRHI = MyVS.GetVertexShader();
+		PSOInitializer.BoundShaderState.PixelShaderRHI = MyPS.GetPixelShader();
+		PSOInitializer.RasterizerState = TStaticRasterizerState<FM_Solid, CM_None>::GetRHI();
+		PSOInitializer.BlendState = TStaticBlendState<
+            /*EColorWriteMask RT0ColorWriteMask = */ CW_RGBA,
+            /*EBlendOperation RT0ColorBlendOp = */ BO_Add,
+            /*EBlendFactor    RT0ColorSrcBlend = */ BF_SourceAlpha,
+            /*EBlendFactor    RT0ColorDestBlend = */ BF_InverseSourceAlpha,
+            /*EBlendOperation RT0AlphaBlendOp = */ BO_Add,
+            /*EBlendFactor    RT0AlphaSrcBlend = */ BF_InverseSourceAlpha,
+            /*EBlendFactor    RT0AlphaDestBlend = */ BF_Zero
+        >::GetRHI();
+		PSOInitializer.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
 
-		MyVS->SetProjectionMatrix(RHICmdList, OrthographicProjection.GetTransposed(), FeatureLevel);
+		SetGraphicsPipelineState(RHICmdList, PSOInitializer); //FCS TODO: Graphics PSOs can only be set inside a RenderPass!
 
-		//Setup Font Texture
-		MyPS->SetFontTexture(RHICmdList, ImGuiFontTexture, ImGuiFontSampler, FeatureLevel);
+		// Setup Our Parameters. This has to happen after SetGraphicsPipelineState
+		{
+			//Setup projection matrix	
+			const float L = ImGuiDrawData.DisplayPos.x;
+			const float R = ImGuiDrawData.DisplayPos.x + ImGuiDrawData.DisplaySize.x;
+			const float T = ImGuiDrawData.DisplayPos.y;
+			const float B = ImGuiDrawData.DisplayPos.y + ImGuiDrawData.DisplaySize.y;
+
+			const FMatrix OrthographicProjection(
+                FPlane(2.0f/(R-L),   0.0f,           0.0f,       0.0f),
+                FPlane(0.0f,         2.0f/(T-B),     0.0f,       0.0f),
+                FPlane(0.0f,         0.0f,           0.5f,       0.0f),
+                FPlane((R+L)/(L-R),  (T+B)/(B-T),    0.5f,       1.0f)
+            );
+
+			MyVS->SetProjectionMatrix(RHICmdList, OrthographicProjection.GetTransposed(), FeatureLevel);
+
+			//Setup Font Texture
+			MyPS->SetFontTexture(RHICmdList, ImGuiFontTexture, ImGuiFontSampler, FeatureLevel);
+		}
+
+		//Cmd Bind Vertex Buffer
+		RHICmdList.SetStreamSource(0, ImguiVertexBuffer, 0);
+	
+		int GlobalVtxOffset = 0;
+		int GlobalIdxOffset = 0;
+		ImVec2 ClipOff = ImGuiDrawData.DisplayPos;         // (0,0) unless using multi-viewports
+		ImVec2 ClipScale = ImGuiDrawData.FramebufferScale; // (1,1) unless using retina display which are often (2,2)
+	
+		for (const auto& CmdList : ImGuiDrawData.CmdLists)
+		{
+			for (const auto& Cmd : CmdList.CmdBuffer)
+			{
+				if (Cmd.UserCallback != nullptr)
+				{
+					//FCS TODO:
+				}
+				else
+				{
+					// Project scissor/clipping rectangles into framebuffer space
+					ImVec4 ClipRect;
+					ClipRect.x = (Cmd.ClipRect.x - ClipOff.x) * ClipScale.x;
+					ClipRect.y = (Cmd.ClipRect.y - ClipOff.y) * ClipScale.y;
+					ClipRect.z = (Cmd.ClipRect.z - ClipOff.x) * ClipScale.x;
+					ClipRect.w = (Cmd.ClipRect.w - ClipOff.y) * ClipScale.y;
+
+					if (ClipRect.x < ImGuiDrawData.DisplaySize.x && ClipRect.y < ImGuiDrawData.DisplaySize.y && ClipRect.z >= 0.0f && ClipRect.w >= 0.0f)
+					{
+						// Negative offsets are illegal for vkCmdSetScissor
+						if (ClipRect.x < 0.0f) { ClipRect.x = 0.0f; }
+						if (ClipRect.y < 0.0f) { ClipRect.y = 0.0f; }
+
+						// // Apply scissor/clipping rectangle
+						RHICmdList.SetScissorRect(true, Cmd.ClipRect.x - ClipOff.x, Cmd.ClipRect.y - ClipOff.y, Cmd.ClipRect.z - ClipOff.x, Cmd.ClipRect.w - ClipOff.y);
+
+						uint32 NumVertices = Cmd.ElemCount;
+						uint32 NumPrimitives = Cmd.ElemCount / 3;
+						RHICmdList.DrawIndexedPrimitive(ImguiIndexBuffer, Cmd.VtxOffset + GlobalVtxOffset, 0, NumVertices, Cmd.IdxOffset + GlobalIdxOffset, NumPrimitives, 1);
+					}
+				}
+			}
+			GlobalIdxOffset += CmdList.IdxBuffer.Size;
+			GlobalVtxOffset += CmdList.VtxBuffer.Size;
+		}
 	}
-
-	//Cmd Bind Vertex Buffer
-	RHICmdList.SetStreamSource(0, ImguiVertexBuffer, 0);
-	
-	int GlobalVtxOffset = 0;
-	int GlobalIdxOffset = 0;
-	ImVec2 ClipOff = ImGuiDrawData.DisplayPos;         // (0,0) unless using multi-viewports
-	ImVec2 ClipScale = ImGuiDrawData.FramebufferScale; // (1,1) unless using retina display which are often (2,2)
-	
-    for (const auto& CmdList : ImGuiDrawData.CmdLists)
-    {
-        for (const auto& Cmd : CmdList.CmdBuffer)
-        {
-            if (Cmd.UserCallback != nullptr)
-            {
-                //FCS TODO:
-            }
-            else
-            {
-                // Project scissor/clipping rectangles into framebuffer space
-                ImVec4 ClipRect;
-                ClipRect.x = (Cmd.ClipRect.x - ClipOff.x) * ClipScale.x;
-                ClipRect.y = (Cmd.ClipRect.y - ClipOff.y) * ClipScale.y;
-                ClipRect.z = (Cmd.ClipRect.z - ClipOff.x) * ClipScale.x;
-                ClipRect.w = (Cmd.ClipRect.w - ClipOff.y) * ClipScale.y;
-
-                if (ClipRect.x < ImGuiDrawData.DisplaySize.x && ClipRect.y < ImGuiDrawData.DisplaySize.y && ClipRect.z >= 0.0f && ClipRect.w >= 0.0f)
-                {
-                    // Negative offsets are illegal for vkCmdSetScissor
-                    if (ClipRect.x < 0.0f) { ClipRect.x = 0.0f; }
-                    if (ClipRect.y < 0.0f) { ClipRect.y = 0.0f; }
-
-                    // // Apply scissor/clipping rectangle
-                	RHICmdList.SetScissorRect(true, Cmd.ClipRect.x - ClipOff.x, Cmd.ClipRect.y - ClipOff.y, Cmd.ClipRect.z - ClipOff.x, Cmd.ClipRect.w - ClipOff.y);
-
-                	uint32 NumVertices = Cmd.ElemCount;
-                	uint32 NumPrimitives = Cmd.ElemCount / 3;
-                	RHICmdList.DrawIndexedPrimitive(ImguiIndexBuffer, Cmd.VtxOffset + GlobalVtxOffset, 0, NumVertices, Cmd.IdxOffset + GlobalIdxOffset, NumPrimitives, 1);
-                }
-            }
-        }
-        GlobalIdxOffset += CmdList.IdxBuffer.Size;
-        GlobalVtxOffset += CmdList.VtxBuffer.Size;
-    }
-    
 	RHICmdList.EndRenderPass();
 }
 
