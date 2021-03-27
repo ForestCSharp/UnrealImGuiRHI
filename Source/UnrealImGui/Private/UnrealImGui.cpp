@@ -153,12 +153,13 @@ void UnrealImGui::Render(const FViewport* const Viewport)
 	UnrealImGuiDrawData.DisplaySize = ImGuiDrawData->DisplaySize;
 	UnrealImGuiDrawData.FramebufferScale = ImGuiDrawData->FramebufferScale;
 
-	const auto FeatureLevel = ERHIFeatureLevel::SM5; //FCS FIXME:
+	const ERHIFeatureLevel::Type FeatureLevel = ERHIFeatureLevel::SM5; //FCS FIXME:
 	
 	ENQUEUE_RENDER_COMMAND(RenderImGuiCmd)(
-	    [UnrealImGuiDrawData, FeatureLevel](FRHICommandListImmediate& RHICmdList)
+	    [UnrealImGuiDrawData, FeatureLevel, Viewport](FRHICommandListImmediate& RHICmdList)
 		{
-		    RenderImGui_RenderThread(RHICmdList, FeatureLevel, UnrealImGuiDrawData);
+	    	const FTexture2DRHIRef& RenderTargetTexture = Viewport->GetRenderTargetTexture();
+		    RenderImGui_RenderThread(RHICmdList, FeatureLevel, UnrealImGuiDrawData, RenderTargetTexture);
 		}
 	);
 }
@@ -168,7 +169,7 @@ void UnrealImGui::Initialize_RenderThread(FRHICommandListImmediate& RHICmdList, 
 	const size_t UploadSize = FontTextureData.Num() * sizeof(char);
 	FRHIResourceCreateInfo FontTextureCreateInfo;
 	FontTextureCreateInfo.DebugName = TEXT("ImGuiFontTexture");
-	ImGuiFontTexture = RHICmdList.CreateTexture2D(Width, Height, PF_R8G8B8A8, 1, 1, TexCreate_ShaderResource, FontTextureCreateInfo);
+	ImGuiFontTexture = RHICreateTexture2D(Width, Height, PF_R8G8B8A8, 1, 1, TexCreate_ShaderResource, FontTextureCreateInfo);
 
 	uint32 _DestStride;
 	unsigned char* TexDst = static_cast<unsigned char*>(RHICmdList.LockTexture2D(ImGuiFontTexture, 0, RLM_WriteOnly, _DestStride, false));
@@ -188,7 +189,7 @@ void UnrealImGui::Initialize_RenderThread(FRHICommandListImmediate& RHICmdList, 
 	ImGuiFontSampler = RHICmdList.CreateSamplerState(SamplerStateCreateInfo);
 }
 
-void UnrealImGui::RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, const FUnrealImGuiDrawData& ImGuiDrawData)
+void UnrealImGui::RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, const FUnrealImGuiDrawData& ImGuiDrawData, const FTexture2DRHIRef& RenderTargetTexture)
 {
 	SCOPED_DRAW_EVENT(RHICmdList, ImGui)
 	
@@ -197,14 +198,14 @@ void UnrealImGui::RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList,
 	size_t VertexBufferSize = VertexCount * sizeof(ImDrawVert);
 	FRHIResourceCreateInfo VertexBufferCreateInfo;
 	VertexBufferCreateInfo.DebugName = TEXT("ImGuiVertexBuffer");
-	ImguiVertexBuffer = RHICmdList.CreateVertexBuffer(VertexBufferSize, BUF_Dynamic, VertexBufferCreateInfo);
+	ImguiVertexBuffer = RHICreateVertexBuffer(VertexBufferSize, BUF_Dynamic, VertexBufferCreateInfo);
 	
 	//Create/Resize Index Buffer
 	const int32 IndexCount = ImGuiDrawData.TotalIdxCount;
 	size_t IndexBufferSize = IndexCount * sizeof(ImDrawIdx);
 	FRHIResourceCreateInfo IndexBufferCreateInfo;
 	IndexBufferCreateInfo.DebugName = TEXT("ImGuiIndexBuffer");
-	ImguiIndexBuffer = RHICmdList.CreateIndexBuffer(sizeof(ImDrawIdx), IndexBufferSize, BUF_Dynamic, IndexBufferCreateInfo);
+	ImguiIndexBuffer = RHICreateIndexBuffer(sizeof(ImDrawIdx), IndexBufferSize, BUF_Dynamic, IndexBufferCreateInfo);
 
 	{
 		ImDrawVert* VtxDst = static_cast<ImDrawVert*>(RHICmdList.LockVertexBuffer(ImguiVertexBuffer, 0, VertexBufferSize, RLM_WriteOnly));
@@ -233,9 +234,10 @@ void UnrealImGui::RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList,
 	FGraphicsPipelineStateInitializer PSOInitializer;
 
 	//FCS FIXME: Is there a Debug Render target that draws over everything? (RHICmdList.BeginRenderPass?) see below
-	// FRHIRenderPassInfo RPInfo(DstPfmMesh.GetTargetableTexture(), ERenderTargetActions::Load_Store);
-	// RHICmdList.BeginRenderPass(RPInfo, TEXT("DisplayClusterPFMExporterShader"));
-	RHICmdList.ApplyCachedRenderTargets(PSOInitializer);
+	FRHIRenderPassInfo RenderPassInfo(RenderTargetTexture, ERenderTargetActions::Load_Store);
+	RHICmdList.BeginRenderPass(RenderPassInfo, TEXT("UnrealImGui"));
+	// RHICmdList.ApplyCachedRenderTargets(PSOInitializer);
+	//FCS TODO: Set Viewport?
 
 	PSOInitializer.PrimitiveType = PT_TriangleList;
 
@@ -260,7 +262,7 @@ void UnrealImGui::RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList,
 	>::GetRHI();
 	PSOInitializer.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
 
-	SetGraphicsPipelineState(RHICmdList, PSOInitializer);
+	SetGraphicsPipelineState(RHICmdList, PSOInitializer); //FCS TODO: Graphics PSOs can only be set inside a RenderPass!
 
 	// Setup Our Parameters. This has to happen after SetGraphicsPipelineState
 	{
@@ -326,6 +328,8 @@ void UnrealImGui::RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList,
         GlobalIdxOffset += CmdList.IdxBuffer.Size;
         GlobalVtxOffset += CmdList.VtxBuffer.Size;
     }
+    
+	RHICmdList.EndRenderPass();
 }
 
 void UnrealImGui::ShutdownImGui_RenderThread()

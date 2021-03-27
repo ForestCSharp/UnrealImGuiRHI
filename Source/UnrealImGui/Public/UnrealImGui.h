@@ -101,7 +101,7 @@ namespace UnrealImGui
 {
 	struct FUnrealImGuiDrawData
 	{
-		TArray<ImDrawList> CmdLists; 			//CmdList Array (explicitly copied into a tarray so we can pass to the Render Thread)
+		TArray<ImDrawList> CmdLists; 			// CmdList Array (explicitly copied into a tarray so we can pass to the Render Thread)
 		int             TotalIdxCount;          // For convenience, sum of all ImDrawList's IdxBuffer.Size
 		int             TotalVtxCount;          // For convenience, sum of all ImDrawList's VtxBuffer.Size
 		ImVec2          DisplayPos;             // Upper-left position of the viewport to render (== upper-left of the orthogonal projection matrix to use)
@@ -124,7 +124,8 @@ namespace UnrealImGui
 	void Initialize_RenderThread(FRHICommandListImmediate& RHICmdList, const TArray<unsigned char>& FontTextureData, int32 Width, int32 Height);
 	
 	void Render(const FViewport* const Viewport);
-	void RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, const FUnrealImGuiDrawData& ImGuiDrawData);
+	void RenderImGui_RenderThread(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, const FUnrealImGuiDrawData& ImGuiDrawData, const
+	                              FTexture2DRHIRef& RenderTargetTexture);
 	
 	void ShutdownImGui_RenderThread();
 }
