@@ -15,7 +15,6 @@ class FUnrealImGuiModule : public IModuleInterface
 {
 public:
 	virtual void StartupModule() override;
-	virtual void ShutdownModule() override;
 };
 
 DECLARE_LOG_CATEGORY_EXTERN(LogUnrealImGui, Verbose, All);

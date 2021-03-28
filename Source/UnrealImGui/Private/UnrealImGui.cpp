@@ -18,12 +18,6 @@ void FUnrealImGuiModule::StartupModule()
 	AddShaderSourceDirectoryMapping(TEXT("/Plugin/UnrealImGui"), PluginShaderDir);
 }
 
-void FUnrealImGuiModule::ShutdownModule()
-{
-	// This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
-	// we call this function before unloading the module.
-}
-
 #undef LOCTEXT_NAMESPACE
 	
 IMPLEMENT_MODULE(FUnrealImGuiModule, UnrealImGui)
@@ -31,22 +25,21 @@ IMPLEMENT_MODULE(FUnrealImGuiModule, UnrealImGui)
 IMPLEMENT_SHADER_TYPE(, FImGuiVS, TEXT("/Plugin/UnrealImGui/Private/ImGui.usf"), TEXT("MainVS"), SF_Vertex);
 IMPLEMENT_SHADER_TYPE(, FImGuiPS, TEXT("/Plugin/UnrealImGui/Private/ImGui.usf"), TEXT("MainPS"), SF_Pixel);
 
-//GameThread Globals
+//BEGIN GameThread Globals
 TWeakObjectPtr<UGameViewportClient> OwningGameViewportClient = nullptr;
-
-//Global ImGui Context Ptr, only used on GameThread
 static ImGuiContext* ImGuiContextPtr = nullptr;
-
 static FDelegateHandle BeginFrameDelegate;
 static FDelegateHandle ViewportRenderedDelegateHandle;
 static FDelegateHandle InputKeyDelegateHandle;
 static FDelegateHandle CloseRequestedDelegateHandle;
+//END GameThread Globals
 
-//RenderThread Globals
+//BEGIN RenderThread Globals
 FVertexBufferRHIRef ImguiVertexBuffer;
 FIndexBufferRHIRef ImguiIndexBuffer;
 FTexture2DRHIRef ImGuiFontTexture;
 FSamplerStateRHIRef ImGuiFontSampler;
+//END RenderThread Globals
 
 void UnrealImGui::Initialize(UGameViewportClient* InGameViewportClient)
 {
@@ -440,10 +433,15 @@ void UnrealImGui::Shutdown(UGameViewportClient* InGameViewportClient)
 		{
 			InGameViewportClient->OnInputKey().Remove(InputKeyDelegateHandle);
 		}
+
+		if (CloseRequestedDelegateHandle.IsValid())
+		{
+			InGameViewportClient->OnCloseRequested().Remove(CloseRequestedDelegateHandle);
+		}
 	}
 
 	ENQUEUE_RENDER_COMMAND(ShutdownImGuiCmd)(
-        [](FRHICommandListImmediate& RHICmdList)
+        [](FRHICommandListImmediate& /*RHICmdList*/)
         {
             Shutdown_RenderThread();
         }
