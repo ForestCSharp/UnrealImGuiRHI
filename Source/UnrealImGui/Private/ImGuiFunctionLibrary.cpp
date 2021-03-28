@@ -9,14 +9,6 @@ void UImGuiFunctionLibrary::ImguiInitialize(const AActor* const ActorContext)
 	}
 }
 
-void UImGuiFunctionLibrary::ImguiShutdown(const AActor* const ActorContext)
-{
-	if (UWorld* World = ActorContext ? ActorContext->GetWorld() : nullptr)
-	{
-		UnrealImGui::Shutdown(World->GetGameViewport());
-	}
-}
-
 void UImGuiFunctionLibrary::ImguiShowDemoWindow()
 {
 	if (ImGui::GetCurrentContext())

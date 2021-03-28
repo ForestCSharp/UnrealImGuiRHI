@@ -11,9 +11,6 @@ class UImGuiFunctionLibrary : public UBlueprintFunctionLibrary
 	static void ImguiInitialize(const AActor* const ActorContext);
 
 	UFUNCTION(BlueprintCallable, Category = ImGui)
-	static void ImguiShutdown(const AActor* const ActorContext);
-
-	UFUNCTION(BlueprintCallable, Category = ImGui)
 	static void ImguiShowDemoWindow();
 
 	UFUNCTION(BlueprintCallable, Category = ImGui)

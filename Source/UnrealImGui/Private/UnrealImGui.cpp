@@ -5,9 +5,12 @@
 // #include "Core/Public/Misc/CoreDelegates.h"
 
 #define IMGUI_IMPLEMENTATION
+#include "Kismet/GameplayStatics.h"
 #include "ThirdParty/ImGui/misc/single_file/imgui_single_file.h"
 
 #define LOCTEXT_NAMESPACE "FUnrealImGuiModule"
+
+DEFINE_LOG_CATEGORY(LogUnrealImGui);
 
 void FUnrealImGuiModule::StartupModule()
 {
@@ -30,8 +33,14 @@ IMPLEMENT_SHADER_TYPE(, FImGuiPS, TEXT("/Plugin/UnrealImGui/Private/ImGui.usf"),
 
 //GameThread Globals
 TWeakObjectPtr<UGameViewportClient> OwningGameViewportClient = nullptr;
-static ImGuiContext* ImGuiContextPtr = nullptr; //FCS TODO: FIXME: Thread-Safe Shared Ptr
+
+//Global ImGui Context Ptr, only used on GameThread
+static ImGuiContext* ImGuiContextPtr = nullptr;
+
+static FDelegateHandle BeginFrameDelegate;
 static FDelegateHandle ViewportRenderedDelegateHandle;
+static FDelegateHandle InputKeyDelegateHandle;
+static FDelegateHandle CloseRequestedDelegateHandle;
 
 //RenderThread Globals
 FVertexBufferRHIRef ImguiVertexBuffer;
@@ -41,16 +50,57 @@ FSamplerStateRHIRef ImGuiFontSampler;
 
 void UnrealImGui::Initialize(UGameViewportClient* InGameViewportClient)
 {
+	if (InGameViewportClient == nullptr)
+	{
+		UE_LOG(LogUnrealImGui, Error, TEXT("Attempting to Initialize UnrealImGui with an invalid UGameViewportClient"));
+	}
+	
 	if (ImGuiContextPtr != nullptr)
 	{
-		//TODO: Warn about double init
+		UE_LOG(LogUnrealImGui, Warning, TEXT("Attempting to Initialize UnrealImGui twice"));
 	}
 
 	ImGuiContextPtr = ImGui::CreateContext();
 	OwningGameViewportClient = InGameViewportClient;
 	
 	ImGuiIO& IO = ImGui::GetIO();
+
+	//Setup Keymap (Map EKeys to ImGui Keys)
+	auto ImGuiKeyMap = [&](const ImGuiKey_ ImGuiKey, const FKey& UnrealKey)
+	{
+		const uint32* KeyCodePtr;
+		const uint32* CharCodePtr;
+		FInputKeyManager::Get().GetCodesFromKey(UnrealKey, KeyCodePtr, CharCodePtr);
+		if (KeyCodePtr != nullptr)
+		{
+			ImGui::GetIO().KeyMap[ImGuiKey] = *KeyCodePtr;
+		}
+	};
 	
+	ImGuiKeyMap(ImGuiKey_Tab, EKeys::Tab);
+	ImGuiKeyMap(ImGuiKey_LeftArrow, EKeys::Left);
+	ImGuiKeyMap(ImGuiKey_RightArrow, EKeys::Right);
+	ImGuiKeyMap(ImGuiKey_UpArrow, EKeys::Up);
+	ImGuiKeyMap(ImGuiKey_DownArrow, EKeys::Down);
+	ImGuiKeyMap(ImGuiKey_PageUp, EKeys::PageUp);
+	ImGuiKeyMap(ImGuiKey_PageDown, EKeys::PageDown);
+	ImGuiKeyMap(ImGuiKey_Home, EKeys::Home);
+	ImGuiKeyMap(ImGuiKey_End, EKeys::End);
+	ImGuiKeyMap(ImGuiKey_Insert, EKeys::Insert);
+	ImGuiKeyMap(ImGuiKey_Delete, EKeys::Delete);
+	ImGuiKeyMap(ImGuiKey_Backspace, EKeys::BackSpace);
+	ImGuiKeyMap(ImGuiKey_Space, EKeys::SpaceBar);
+	ImGuiKeyMap(ImGuiKey_Enter, EKeys::Enter);
+	ImGuiKeyMap(ImGuiKey_Escape, EKeys::Escape);
+	ImGuiKeyMap(ImGuiKey_KeyPadEnter, EKeys::Enter);
+	ImGuiKeyMap(ImGuiKey_A, EKeys::A);
+	ImGuiKeyMap(ImGuiKey_C, EKeys::C);
+	ImGuiKeyMap(ImGuiKey_V, EKeys::V);
+	ImGuiKeyMap(ImGuiKey_X, EKeys::X);
+	ImGuiKeyMap(ImGuiKey_Y, EKeys::Y);
+	ImGuiKeyMap(ImGuiKey_Z, EKeys::Z);
+
+	//Get Font Texture Data, to be passed to the render thread
 	unsigned char* FontTexSrc = nullptr;
 	int32 Width,Height,BytesPerPixel;
 	IO.Fonts->GetTexDataAsRGBA32(&FontTexSrc, &Width, &Height, &BytesPerPixel);
@@ -66,23 +116,43 @@ void UnrealImGui::Initialize(UGameViewportClient* InGameViewportClient)
 
 	//Call New Frame Once Here to ensure we're properly initialized
 	ImGui::NewFrame();
+
+	//Bind to mouse scroll axis key
+	if (const auto LocalPlayerController = UGameplayStatics::GetPlayerController(OwningGameViewportClient.Get(), 0))
+	{
+		if (LocalPlayerController->InputComponent)
+		{
+			LocalPlayerController->InputComponent->BindAxisKey(EKeys::MouseWheelAxis);
+		}
+	}
+
+	BeginFrameDelegate = FCoreDelegates::OnBeginFrame.AddLambda([]()
+	{
+		//MouseWheel has to be updated before ImGui::NewFrame()
+		if (const auto LocalPlayerController = UGameplayStatics::GetPlayerController(OwningGameViewportClient.Get(), 0))
+		{
+			const float ScrollSpeed = 1.0f;
+			ImGui::GetIO().MouseWheel += LocalPlayerController->GetInputAxisKeyValue(EKeys::MouseWheelAxis) * ScrollSpeed;
+		}
+
+		ImGui::NewFrame();
+	});
 	
 	ViewportRenderedDelegateHandle = InGameViewportClient->OnViewportRendered().AddLambda([](FViewport* InViewport)
 	{
-		if (UnrealImGui::ShowImGui)
+		//If CVar true, render
+		if (GShowImGui)
 		{
-			UnrealImGui::Render_GameThread(InViewport);
-			ImGui::NewFrame();
+			Render_GameThread(InViewport);
 		}
 	});
 	
-	InGameViewportClient->OnInputKey().AddLambda([](const FInputKeyEventArgs& InputKeyEvent)
+	InputKeyDelegateHandle = InGameViewportClient->OnInputKey().AddLambda([](const FInputKeyEventArgs& InputKeyEvent)
 	{
 		const uint32* KeyCodePtr;
 		const uint32* CharCodePtr;
 		FInputKeyManager::Get().GetCodesFromKey(InputKeyEvent.Key, KeyCodePtr, CharCodePtr);
 
-		//FCS TODO: Fix this
 		if (CharCodePtr != nullptr && InputKeyEvent.Event != IE_Released)
 		{
 			ImGui::GetIO().AddInputCharacterUTF16(*CharCodePtr);
@@ -93,33 +163,58 @@ void UnrealImGui::Initialize(UGameViewportClient* InGameViewportClient)
 		}
 	});
 
-	//TODO: OnCloseRequested?
+	CloseRequestedDelegateHandle = InGameViewportClient->OnCloseRequested().AddLambda([](FViewport* /*Viewport*/)
+	{
+		if (OwningGameViewportClient.IsValid())
+		{
+			Shutdown(OwningGameViewportClient.Get());
+		}
+	});
 }
 
-void UnrealImGui::Shutdown(UGameViewportClient* InGameViewportClient)
-{
-	ImGui::DestroyContext();
-	ImGuiContextPtr = nullptr;
-	OwningGameViewportClient.Reset();
+void UnrealImGui::Initialize_RenderThread(FRHICommandListImmediate& RHICmdList, const TArray<unsigned char>& FontTextureData, int32 Width, int32 Height)
+{	
+	const size_t UploadSize = FontTextureData.Num() * sizeof(char);
+	FRHIResourceCreateInfo FontTextureCreateInfo;
+	FontTextureCreateInfo.DebugName = TEXT("ImGuiFontTexture");
+	ImGuiFontTexture = RHICreateTexture2D(Width, Height, PF_R8G8B8A8, 1, 1, TexCreate_ShaderResource, FontTextureCreateInfo);
 
-	if (ViewportRenderedDelegateHandle.IsValid())
-	{
-		InGameViewportClient->OnViewportRendered().Remove(ViewportRenderedDelegateHandle);
-	}
+	uint32 _DestStride;
+	unsigned char* TexDst = static_cast<unsigned char*>(RHICmdList.LockTexture2D(ImGuiFontTexture, 0, RLM_WriteOnly, _DestStride, false));
+	FMemory::Memcpy(TexDst, FontTextureData.GetData(), UploadSize);
+	RHICmdList.UnlockTexture2D(ImGuiFontTexture, 0, false);
 
-	ENQUEUE_RENDER_COMMAND(ShutdownImGuiCmd)(
-        [](FRHICommandListImmediate& RHICmdList)
-        {
-            ShutdownImGui_RenderThread();
-        }
-    );
+	FSamplerStateInitializerRHI SamplerStateCreateInfo;
+	SamplerStateCreateInfo.Filter = SF_Trilinear;
+	SamplerStateCreateInfo.AddressU = AM_Wrap;
+	SamplerStateCreateInfo.AddressV = AM_Wrap;
+	SamplerStateCreateInfo.AddressW = AM_Wrap;
+	SamplerStateCreateInfo.MipBias = 1.0f;
+	SamplerStateCreateInfo.MinMipLevel = 0;
+	SamplerStateCreateInfo.MaxMipLevel = 0;
+	SamplerStateCreateInfo.MaxAnisotropy = 1.0f;
+	SamplerStateCreateInfo.SamplerComparisonFunction = SCF_Never;
+	ImGuiFontSampler = RHICmdList.CreateSamplerState(SamplerStateCreateInfo);
 }
 
 void UnrealImGui::Render_GameThread(const FViewport* const Viewport)
 {
 	if (ImGuiContextPtr == nullptr)
 	{
-		//FCS TODO: UE_LOG Warning
+		UE_LOG(LogUnrealImGui, Error, TEXT("Attempting to render UnrealImGui, but ImGuiContextPtr is nullptr"));
+		return;
+	}
+
+	if (!OwningGameViewportClient.IsValid())
+	{
+		UE_LOG(LogUnrealImGui, Error, TEXT("Attempting to render UnrealImGui with invalid GameViewportClient"));
+		return;
+	}
+
+	UWorld* World = OwningGameViewportClient->GetWorld() != nullptr ? OwningGameViewportClient->GetWorld() : GWorld;
+	if (World == nullptr)
+	{
+		UE_LOG(LogUnrealImGui, Error, TEXT("Attempting to render UnrealImGui with invalid UWorld"));
 		return;
 	}
 	
@@ -127,15 +222,9 @@ void UnrealImGui::Render_GameThread(const FViewport* const Viewport)
 	const auto& ViewportSize = Viewport->GetRenderTargetTextureSizeXY();
 	IO.DisplaySize.x = ViewportSize.X;
 	IO.DisplaySize.y = ViewportSize.Y;
-	//FCS TODO: DPI Scale
+	// IO.DisplayFramebufferScale = ...
 
-	if (OwningGameViewportClient.IsValid())
-	{
-		if (UWorld* World = OwningGameViewportClient->GetWorld())
-		{
-			IO.DeltaTime = World->GetDeltaSeconds();
-		}
-	}
+	IO.DeltaTime = World->GetDeltaSeconds();
 
 	//Mouse Input
 	IO.MousePos.x = Viewport->GetMouseX();
@@ -143,7 +232,6 @@ void UnrealImGui::Render_GameThread(const FViewport* const Viewport)
 	IO.MouseDown[0] = Viewport->KeyState(EKeys::LeftMouseButton);
 	IO.MouseDown[1] = Viewport->KeyState(EKeys::RightMouseButton);
 	IO.MouseDown[2] = Viewport->KeyState(EKeys::MiddleMouseButton);
-	//FCS TODO: Mouse Wheel Data
 
 	//Modifier Keys
 	IO.KeyCtrl = Viewport->KeyState(EKeys::LeftControl) || Viewport->KeyState(EKeys::RightControl);
@@ -175,7 +263,7 @@ void UnrealImGui::Render_GameThread(const FViewport* const Viewport)
 	UnrealImGuiDrawData.DisplaySize = ImGuiDrawData->DisplaySize;
 	UnrealImGuiDrawData.FramebufferScale = ImGuiDrawData->FramebufferScale;
 
-	const ERHIFeatureLevel::Type FeatureLevel = GWorld->FeatureLevel; //FCS TODO: FIXME:
+	const ERHIFeatureLevel::Type FeatureLevel = World->FeatureLevel;
 	
 	ENQUEUE_RENDER_COMMAND(RenderImGuiCmd)(
 	    [UnrealImGuiDrawData, FeatureLevel, Viewport](FRHICommandListImmediate& RHICmdList)
@@ -184,65 +272,6 @@ void UnrealImGui::Render_GameThread(const FViewport* const Viewport)
 		    Render_RenderThread(RHICmdList, FeatureLevel, UnrealImGuiDrawData, RenderTargetTexture);
 		}
 	);
-}
-
-void UnrealImGui::Initialize_RenderThread(FRHICommandListImmediate& RHICmdList, const TArray<unsigned char>& FontTextureData, int32 Width, int32 Height)
-{	
-	const size_t UploadSize = FontTextureData.Num() * sizeof(char);
-	FRHIResourceCreateInfo FontTextureCreateInfo;
-	FontTextureCreateInfo.DebugName = TEXT("ImGuiFontTexture");
-	ImGuiFontTexture = RHICreateTexture2D(Width, Height, PF_R8G8B8A8, 1, 1, TexCreate_ShaderResource, FontTextureCreateInfo);
-
-	uint32 _DestStride;
-	unsigned char* TexDst = static_cast<unsigned char*>(RHICmdList.LockTexture2D(ImGuiFontTexture, 0, RLM_WriteOnly, _DestStride, false));
-	FMemory::Memcpy(TexDst, FontTextureData.GetData(), UploadSize);
-	RHICmdList.UnlockTexture2D(ImGuiFontTexture, 0, false);
-
-	FSamplerStateInitializerRHI SamplerStateCreateInfo;
-	SamplerStateCreateInfo.Filter = SF_Trilinear;
-	SamplerStateCreateInfo.AddressU = AM_Wrap;
-	SamplerStateCreateInfo.AddressV = AM_Wrap;
-	SamplerStateCreateInfo.AddressW = AM_Wrap;
-	SamplerStateCreateInfo.MipBias = 1.0f;
-	SamplerStateCreateInfo.MinMipLevel = 0;
-	SamplerStateCreateInfo.MaxMipLevel = 0;
-	SamplerStateCreateInfo.MaxAnisotropy = 1.0f;
-	SamplerStateCreateInfo.SamplerComparisonFunction = SCF_Never;
-	ImGuiFontSampler = RHICmdList.CreateSamplerState(SamplerStateCreateInfo);
-
-	auto ImGuiKeyMap = [&](ImGuiKey_ ImGuiKey, const FKey& UnrealKey)
-	{
-		const uint32* KeyCodePtr;
-		const uint32* CharCodePtr;
-		FInputKeyManager::Get().GetCodesFromKey(UnrealKey, KeyCodePtr, CharCodePtr);
-		if (KeyCodePtr != nullptr)
-		{
-			ImGui::GetIO().KeyMap[ImGuiKey] = *KeyCodePtr;
-		}
-	};
-	
-	ImGuiKeyMap(ImGuiKey_Tab, EKeys::Tab);
-	ImGuiKeyMap(ImGuiKey_LeftArrow, EKeys::Left);
-	ImGuiKeyMap(ImGuiKey_RightArrow, EKeys::Right);
-	ImGuiKeyMap(ImGuiKey_UpArrow, EKeys::Up);
-	ImGuiKeyMap(ImGuiKey_DownArrow, EKeys::Down);
-	ImGuiKeyMap(ImGuiKey_PageUp, EKeys::PageUp);
-	ImGuiKeyMap(ImGuiKey_PageDown, EKeys::PageDown);
-	ImGuiKeyMap(ImGuiKey_Home, EKeys::Home);
-	ImGuiKeyMap(ImGuiKey_End, EKeys::End);
-	ImGuiKeyMap(ImGuiKey_Insert, EKeys::Insert);
-	ImGuiKeyMap(ImGuiKey_Delete, EKeys::Delete);
-	ImGuiKeyMap(ImGuiKey_Backspace, EKeys::BackSpace);
-	ImGuiKeyMap(ImGuiKey_Space, EKeys::SpaceBar);
-	ImGuiKeyMap(ImGuiKey_Enter, EKeys::Enter);
-	ImGuiKeyMap(ImGuiKey_Escape, EKeys::Escape);
-	// ImGuiKeyMap(ImGuiKey_KeyPadEnter, EKeys::Enter);
-	ImGuiKeyMap(ImGuiKey_A, EKeys::A);
-	ImGuiKeyMap(ImGuiKey_C, EKeys::C);
-	ImGuiKeyMap(ImGuiKey_V, EKeys::V);
-	ImGuiKeyMap(ImGuiKey_X, EKeys::X);
-	ImGuiKeyMap(ImGuiKey_Y, EKeys::Y);
-	ImGuiKeyMap(ImGuiKey_Z, EKeys::Z);
 }
 
 void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, const FUnrealImGuiDrawData& ImGuiDrawData, const FTexture2DRHIRef& RenderTargetTexture)
@@ -292,7 +321,7 @@ void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHI
 	PSOInitializer.RenderTargetFormats[0] = RenderTargetTexture->GetFormat();
 	PSOInitializer.RenderTargetFlags[0] = RenderTargetTexture->GetFlags();
 
-	//FCS FIXME: Is there a Debug Render target that draws over everything? (RHICmdList.BeginRenderPass?) see below
+	//FCS NOTE: Is there a Debug Render target that draws over everything (Debug/UI)?
 	FRHIRenderPassInfo RenderPassInfo(RenderTargetTexture, ERenderTargetActions::Load_Store);
 	RHICmdList.BeginRenderPass(RenderPassInfo, TEXT("UnrealImGui"));
 	{
@@ -319,7 +348,7 @@ void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHI
         >::GetRHI();
 		PSOInitializer.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
 
-		SetGraphicsPipelineState(RHICmdList, PSOInitializer); //FCS TODO: Graphics PSOs can only be set inside a RenderPass!
+		SetGraphicsPipelineState(RHICmdList, PSOInitializer);
 
 		// Setup Our Parameters. This has to happen after SetGraphicsPipelineState
 		{
@@ -356,7 +385,7 @@ void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHI
 			{
 				if (Cmd.UserCallback != nullptr)
 				{
-					//FCS TODO:
+					Cmd.UserCallback(&CmdList, &Cmd);
 				}
 				else
 				{
@@ -389,7 +418,39 @@ void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHI
 	RHICmdList.EndRenderPass();
 }
 
-void UnrealImGui::ShutdownImGui_RenderThread()
+void UnrealImGui::Shutdown(UGameViewportClient* InGameViewportClient)
+{
+	ImGui::DestroyContext();
+	ImGuiContextPtr = nullptr;
+	OwningGameViewportClient.Reset();
+
+	if (BeginFrameDelegate.IsValid())
+	{
+		FCoreDelegates::OnBeginFrame.Remove(BeginFrameDelegate);
+	}
+
+	if (InGameViewportClient != nullptr)
+	{
+		if (ViewportRenderedDelegateHandle.IsValid())
+		{
+			InGameViewportClient->OnViewportRendered().Remove(ViewportRenderedDelegateHandle);
+		}
+
+		if (InputKeyDelegateHandle.IsValid())
+		{
+			InGameViewportClient->OnInputKey().Remove(InputKeyDelegateHandle);
+		}
+	}
+
+	ENQUEUE_RENDER_COMMAND(ShutdownImGuiCmd)(
+        [](FRHICommandListImmediate& RHICmdList)
+        {
+            Shutdown_RenderThread();
+        }
+    );
+}
+
+void UnrealImGui::Shutdown_RenderThread()
 {
 	if (ImguiVertexBuffer.IsValid())
 	{

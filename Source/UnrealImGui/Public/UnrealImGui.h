@@ -3,7 +3,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Modules/ModuleManager.h"
 #include "../../RenderCore/Public/ShaderParameters.h"
 #include "../../RHI/Public/RHIResources.h"
 #include "Runtime/RenderCore/Public/GlobalShader.h"
@@ -18,6 +17,8 @@ public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 };
+
+DECLARE_LOG_CATEGORY_EXTERN(LogUnrealImGui, Verbose, All);
 
 //Vertex Shader for ImGui
 class FImGuiVS : public FGlobalShader
@@ -35,7 +36,6 @@ class FImGuiVS : public FGlobalShader
     {
         return true;
     }
-
 
     static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
     {
@@ -109,22 +109,21 @@ namespace UnrealImGui
 		ImVec2          FramebufferScale;       // Amount of pixels for each unit of DisplaySize. Based on io.DisplayFramebufferScale. Generally (1,1) on normal display, (2,2) on OSX with Retina display.
 	};
 
-	UNREAL_IMGUI_API int32 ShowImGui = 1;
+	UNREAL_IMGUI_API bool GShowImGui = true;
 	static FAutoConsoleVariableRef CVarShowImGui = FAutoConsoleVariableRef(
         TEXT("imgui.show"),
-        ShowImGui,
+        GShowImGui,
         TEXT("If enabled, shows ImGui Debug UI\n")
         TEXT("0: Disable, 1: Show"),
         ECVF_Cheat
     );
 	
 	void UNREAL_IMGUI_API Initialize(UGameViewportClient* InGameViewportClient);
-	void UNREAL_IMGUI_API Shutdown(UGameViewportClient* InGameViewportClient);
-
 	void Initialize_RenderThread(FRHICommandListImmediate& RHICmdList, const TArray<unsigned char>& FontTextureData, int32 Width, int32 Height);
 	
 	void Render_GameThread(const FViewport* const Viewport);
 	void Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, const FUnrealImGuiDrawData& ImGuiDrawData, const FTexture2DRHIRef& RenderTargetTexture);
-	
-	void ShutdownImGui_RenderThread();
+
+	void UNREAL_IMGUI_API Shutdown(UGameViewportClient* InGameViewportClient);
+	void Shutdown_RenderThread();
 }
