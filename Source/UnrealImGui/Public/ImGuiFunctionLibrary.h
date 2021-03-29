@@ -28,5 +28,8 @@ class UImGuiFunctionLibrary : public UBlueprintFunctionLibrary
 	UFUNCTION(BlueprintCallable, Category = ImGui)
 	static bool ImguiButton(const FString& Label);
 
+	UFUNCTION(BlueprintCallable, Category = ImGui)
+    static void ImguiObject(UObject* InObject);
+
 	//Helper to Pass in UObject, render all properties?
 };
