@@ -49,70 +49,88 @@ void UImGuiFunctionLibrary::ImguiObject(UObject* InObject)
 {
 	if (ImGui::GetCurrentContext() && InObject != nullptr)
 	{
-		//FCS TODO: If in a "Begin", just start adding UI. Otherwise, create window named InObject's name
-		//
-		//FCS TODO: Look at my old Ofx property editor (listed names first)
+		ImGui::Begin(TCHAR_TO_ANSI(*InObject->GetName()));
+		
+		//FCS TODO: Better Name / Manipulator separation (two columns, name first)
 		//FCS TODO: Sort by categories
-	
-		for (FProperty* Property : TFieldRange<FProperty>(InObject->GetClass()))
+		if (ImGui::BeginTable("split", 2, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_Resizable))
 		{
-			const char* PropertyName = TCHAR_TO_ANSI(*Property->GetName());
-			void* PropertyAddress = Property->ContainerPtrToValuePtr<void>(InObject);
-			
-			if (FFloatProperty* FloatProperty = CastField<FFloatProperty>(Property))
+			int32 ID = 0; //FCS TODO: Does this work with recursion?
+			for (FProperty* Property : TFieldRange<FProperty>(InObject->GetClass()))
 			{
-				float* FloatPtr = FloatProperty->GetPropertyValuePtr(PropertyAddress);
-				ImGui::InputFloat(PropertyName, FloatPtr);
-				//TODO: Sliders, using SliderMin, SliderMax
-			}
-			else if (FIntProperty* IntProperty = CastField<FIntProperty>(Property))
-			{
-				int32* IntPtr = IntProperty->GetPropertyValuePtr(PropertyAddress);
-				ImGui::InputInt(PropertyName, IntPtr);
-				//TODO: Sliders, using SliderMin, SliderMax
-			}
-			else if (FBoolProperty* BoolProperty = CastField<FBoolProperty>(Property))
-			{
-				bool BoolValue = BoolProperty->GetPropertyValue(PropertyAddress);
-				if (ImGui::Checkbox(PropertyName, &BoolValue))
+				ImGui::PushID(ID++);
+				ImGui::TableNextRow();
+				
+                ImGui::TableSetColumnIndex(0);
 				{
-					BoolProperty->SetPropertyValue(PropertyAddress, BoolValue);
+					const char* PropertyName = TCHAR_TO_ANSI(*Property->GetName());
+					ImGui::AlignTextToFramePadding();
+					ImGui::Text(PropertyName);
 				}
-			}
-			else if (FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
-			{
-				FNumericProperty* UnderlyingProperty = EnumProperty->GetUnderlyingProperty();
-				UEnum* Enum = EnumProperty->GetEnum();
-				if (UnderlyingProperty && Enum)
-				{
-					const int64 CurrentValue = UnderlyingProperty->GetSignedIntPropertyValue(PropertyAddress);
-					const int32 CurrentIndex = Enum->GetIndexByValue(CurrentValue);
-					FString CurrentValueName = Enum->GetDisplayNameTextByIndex(CurrentIndex).ToString();
 
-					if (ImGui::BeginCombo(PropertyName, TCHAR_TO_ANSI(*CurrentValueName)))
+                ImGui::TableSetColumnIndex(1);
+				{
+					void* PropertyAddress = Property->ContainerPtrToValuePtr<void>(InObject);
+			
+					if (FFloatProperty* FloatProperty = CastField<FFloatProperty>(Property))
 					{
-						for (int32 i = 0; i < Enum->NumEnums(); ++i)
+						float* FloatPtr = FloatProperty->GetPropertyValuePtr(PropertyAddress);
+						ImGui::InputFloat("##value", FloatPtr);
+						//TODO: Sliders, using SliderMin, SliderMax
+					}
+					else if (FIntProperty* IntProperty = CastField<FIntProperty>(Property))
+					{
+						int32* IntPtr = IntProperty->GetPropertyValuePtr(PropertyAddress);
+						ImGui::InputInt("##value", IntPtr);
+						//TODO: Sliders, using SliderMin, SliderMax
+					}
+					else if (FBoolProperty* BoolProperty = CastField<FBoolProperty>(Property))
+					{
+						bool BoolValue = BoolProperty->GetPropertyValue(PropertyAddress);
+						if (ImGui::Checkbox("##value", &BoolValue))
 						{
-							const bool bIsSelected = i == CurrentIndex;
-							if (ImGui::Selectable(TCHAR_TO_ANSI(*Enum->GetDisplayNameTextByIndex(i).ToString()), bIsSelected))
-							{
-								const int64 NewValue = Enum->GetValueByIndex(i);
-								UnderlyingProperty->SetIntPropertyValue(PropertyAddress, NewValue);
-							}  
-                            if (bIsSelected)
-                            {
-                            	// Set the initial focus when opening the combo
-                            	ImGui::SetItemDefaultFocus();
-                            }
+							BoolProperty->SetPropertyValue(PropertyAddress, BoolValue);
 						}
-						ImGui::EndCombo();
+					}
+					else if (FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
+					{
+						FNumericProperty* UnderlyingProperty = EnumProperty->GetUnderlyingProperty();
+						UEnum* Enum = EnumProperty->GetEnum();
+						if (UnderlyingProperty && Enum)
+						{
+							const int64 CurrentValue = UnderlyingProperty->GetSignedIntPropertyValue(PropertyAddress);
+							const int32 CurrentIndex = Enum->GetIndexByValue(CurrentValue);
+							FString CurrentValueName = Enum->GetDisplayNameTextByIndex(CurrentIndex).ToString();
+					
+							if (ImGui::BeginCombo("##combo", TCHAR_TO_ANSI(*CurrentValueName)))
+							{
+								//FCS TODO: Don't display the "MAX" entry
+								for (int32 i = 0; i < Enum->NumEnums(); ++i)
+								{
+									const bool bIsSelected = i == CurrentIndex;
+									if (ImGui::Selectable(TCHAR_TO_ANSI(*Enum->GetDisplayNameTextByIndex(i).ToString()), bIsSelected))
+									{
+										const int64 NewValue = Enum->GetValueByIndex(i);
+										UnderlyingProperty->SetIntPropertyValue(PropertyAddress, NewValue);
+									}  
+									if (bIsSelected)
+									{
+										// Set the initial focus when opening the combo
+										ImGui::SetItemDefaultFocus();
+									}
+								}
+								ImGui::EndCombo();
+							}
+						}
 					}
 				}
+				//TODO: FStructProperty
+				//TODO: ObjectProperty (recursive call to ImguiObject)
+				ImGui::PopID();
 			}
-
-			//TODO: FStructProperty
-			//TODO: FEnumProperty
-			//TODO: ObjectProperty (recursive call to ImguiObject)
+			ImGui::EndTable();
 		}
+
+		ImGui::End();
 	}
 }
