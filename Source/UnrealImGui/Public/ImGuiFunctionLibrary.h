@@ -29,7 +29,7 @@ class UImGuiFunctionLibrary : public UBlueprintFunctionLibrary
 	static bool ImguiButton(const FString& Label);
 
 	UFUNCTION(BlueprintCallable, Category = ImGui)
-    static void ImguiObject(UObject* InObject);
+    static void ImguiObject(UObject* InObject, const bool bOpenInNewWindow = true);
 
 	//Helper to Pass in UObject, render all properties?
 };
