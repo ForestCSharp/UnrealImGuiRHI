@@ -63,6 +63,8 @@ void UImGuiFunctionLibrary::ImguiObject(UObject* InObject, const bool bOpenInNew
 			{
 				const char* PropertyName = TCHAR_TO_ANSI(*ObjectProperty->GetName());
 				void* PropertyAddress = ObjectProperty->ContainerPtrToValuePtr<void>(InObject);
+                
+                ImGui::PushID(PropertyAddress);
 			
 				UObject* ChildObject = ObjectProperty->GetObjectPropertyValue(PropertyAddress);
 				if (ChildObject != nullptr)
@@ -74,6 +76,8 @@ void UImGuiFunctionLibrary::ImguiObject(UObject* InObject, const bool bOpenInNew
 						ImGui::Unindent(Indentation);
 					}
 				}
+
+				ImGui::PopID();
 			}
 			ImGui::Unindent(Indentation);
 		}
@@ -82,7 +86,6 @@ void UImGuiFunctionLibrary::ImguiObject(UObject* InObject, const bool bOpenInNew
 
 		if (ImGui::CollapsingHeader("Properties"))
 		{
-			//FCS TODO: Sort by Categories (use collapsing headers) (one Table per Category)
 			TMap<FString, TArray<FProperty*>> Categories;
 			for (FProperty* Property : TFieldRange<FProperty>(InObject->GetClass()))
 			{
@@ -99,9 +102,13 @@ void UImGuiFunctionLibrary::ImguiObject(UObject* InObject, const bool bOpenInNew
 					continue;
 				}
 
-				//FCS TODO: If Runtime, Don't show "EditDefaultsOnly" properties
+				//Don't show "EditDefaultsOnly" properties
+				if (Property->HasMetaData(TEXT("EditDefaultsOnly")))
+				{
+					continue;
+				}
+
 				//FCS TODO: Option to only show "EditAnywhere"
-				
 				const FString& Category = Property->GetMetaData(TEXT("Category"));
 				Categories.FindOrAdd(Category).Add(Property);
 			}
