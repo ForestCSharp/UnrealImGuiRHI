@@ -47,10 +47,17 @@ class UImGuiFunctionLibrary : public UBlueprintFunctionLibrary
 	UFUNCTION(BlueprintCallable, Category = ImGui)
 	static void ImguiSeparator();
 
-	//TODO: Indent,Unindent,BeginGroup,EndGroup
+	//TODO: Indent,Unindent
+	UFUNCTION(BlueprintCallable, Category = ImGui)
+    static void ImguiIndent();
 
 	UFUNCTION(BlueprintCallable, Category = ImGui)
-	static void ImGuiText(const FString& Text);
+    static void ImguiUnindent();
+
+	//TODO: BeginGroup (locks horizontal starting pos),EndGroup
+
+	UFUNCTION(BlueprintCallable, Category = ImGui)
+	static void ImguiText(const FString& Text);
 
 	UFUNCTION(BlueprintCallable, Category = ImGui)
 	static bool ImguiButton(const FString& Label);

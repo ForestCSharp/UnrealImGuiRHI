@@ -1,6 +1,16 @@
 #include "ImGuiFunctionLibrary.h"
 #include "UnrealImGui.h"
 
+//Helper macro to check ImGui context then call an ImGui function
+#define IMGUI_CALL(imgui_function) \
+if (ImGui::GetCurrentContext())    \
+{								   \
+	(imgui_function);			   \
+}								   \
+
+//Helper for ImGui functions that return a bool to signify if a given item was clicked this frame or is active
+#define IMGUI_CALL_WITH_RESULT(imgui_function) ImGui::GetCurrentContext() ? (imgui_function) : false;
+
 void UImGuiFunctionLibrary::ImguiInitialize(const AActor* const ActorContext)
 {
 	if (UWorld* World = ActorContext ? ActorContext->GetWorld() : nullptr)
@@ -11,10 +21,7 @@ void UImGuiFunctionLibrary::ImguiInitialize(const AActor* const ActorContext)
 
 void UImGuiFunctionLibrary::ImguiShowDemoWindow()
 {
-	if (ImGui::GetCurrentContext())
-	{
-		ImGui::ShowDemoWindow();
-	}
+	IMGUI_CALL(ImGui::ShowDemoWindow());
 }
 
 void UImGuiFunctionLibrary::ImguiShowMetricsWindow()
@@ -27,41 +34,42 @@ void UImGuiFunctionLibrary::ImguiShowMetricsWindow()
 
 bool UImGuiFunctionLibrary::ImguiBegin(const FString& Label)
 {
-	return ImGui::GetCurrentContext() ? ImGui::Begin(TCHAR_TO_ANSI(*Label), nullptr) : false;
+	return IMGUI_CALL_WITH_RESULT(ImGui::Begin(TCHAR_TO_ANSI(*Label), nullptr));
 }
 
 void UImGuiFunctionLibrary::ImguiEnd()
 {
-	if (ImGui::GetCurrentContext())
-	{
-		ImGui::End();
-	}
+	IMGUI_CALL(ImGui::End());
 }
 
 void UImGuiFunctionLibrary::ImguiSeparator()
 {
-	if (ImGui::GetCurrentContext())
-	{
-		ImGui::Separator();
-	}
+	IMGUI_CALL(ImGui::Separator());
 }
 
-void UImGuiFunctionLibrary::ImGuiText(const FString& Text)
+void UImGuiFunctionLibrary::ImguiIndent()
 {
-	if (ImGui::GetCurrentContext())
-	{
-		ImGui::Text(TCHAR_TO_ANSI(*Text));
-	}
+	IMGUI_CALL(ImGui::Indent());
+}
+
+void UImGuiFunctionLibrary::ImguiUnindent()
+{
+	IMGUI_CALL(ImGui::Unindent());
+}
+
+void UImGuiFunctionLibrary::ImguiText(const FString& Text)
+{
+	IMGUI_CALL(ImGui::Text(TCHAR_TO_ANSI(*Text)));
 }
 
 bool UImGuiFunctionLibrary::ImguiButton(const FString& Label)
 {
-	return ImGui::GetCurrentContext() ? ImGui::Button(TCHAR_TO_ANSI(*Label)) : false;
+	return IMGUI_CALL_WITH_RESULT(ImGui::Button(TCHAR_TO_ANSI(*Label)));
 }
 
 bool UImGuiFunctionLibrary::ImguiCheckbox(const FString& Label, UPARAM(ref) bool& BoolRef)
 {
-	return ImGui::GetCurrentContext() ? ImGui::Checkbox(TCHAR_TO_ANSI(*Label), &BoolRef) : false;
+	return IMGUI_CALL_WITH_RESULT(ImGui::Checkbox(TCHAR_TO_ANSI(*Label), &BoolRef));
 }
 
 void UImGuiFunctionLibrary::ImguiCheckboxBranched(const FString& Label, bool& BoolRef, EImGuiClickResult& Branches)
@@ -71,7 +79,7 @@ void UImGuiFunctionLibrary::ImguiCheckboxBranched(const FString& Label, bool& Bo
 
 bool UImGuiFunctionLibrary::ImguiSliderFloat(const FString& Label, UPARAM(ref) float& FloatRef, float Min, float Max)
 {
-	return ImGui::GetCurrentContext() ? ImGui::SliderFloat(TCHAR_TO_ANSI(*Label), &FloatRef, Min, Max) : false;
+	return IMGUI_CALL_WITH_RESULT(ImGui::SliderFloat(TCHAR_TO_ANSI(*Label), &FloatRef, Min, Max));
 }
 
 void UImGuiFunctionLibrary::ImguiSliderFloatBranched(const FString& Label, UPARAM(ref) float& FloatRef, float Min, float Max, EImGuiClickResult& Branches)
