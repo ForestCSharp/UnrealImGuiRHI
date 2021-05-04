@@ -17,6 +17,14 @@ void UImGuiFunctionLibrary::ImguiShowDemoWindow()
 	}
 }
 
+void UImGuiFunctionLibrary::ImguiShowMetricsWindow()
+{
+	if (ImGui::GetCurrentContext())
+	{
+		ImGui::ShowMetricsWindow();
+	}
+}
+
 bool UImGuiFunctionLibrary::ImguiBegin(const FString& Label)
 {
 	return ImGui::GetCurrentContext() ? ImGui::Begin(TCHAR_TO_ANSI(*Label), nullptr) : false;
@@ -30,9 +38,25 @@ void UImGuiFunctionLibrary::ImguiEnd()
 	}
 }
 
-bool UImGuiFunctionLibrary::ImguiSliderFloat(const FString& Label, UPARAM(ref) float& FloatRef, float Min, float Max)
+void UImGuiFunctionLibrary::ImguiSeparator()
 {
-	return ImGui::GetCurrentContext() ? ImGui::SliderFloat(TCHAR_TO_ANSI(*Label), &FloatRef, Min, Max) : false;
+	if (ImGui::GetCurrentContext())
+	{
+		ImGui::Separator();
+	}
+}
+
+void UImGuiFunctionLibrary::ImGuiText(const FString& Text)
+{
+	if (ImGui::GetCurrentContext())
+	{
+		ImGui::Text(TCHAR_TO_ANSI(*Text));
+	}
+}
+
+bool UImGuiFunctionLibrary::ImguiButton(const FString& Label)
+{
+	return ImGui::GetCurrentContext() ? ImGui::Button(TCHAR_TO_ANSI(*Label)) : false;
 }
 
 bool UImGuiFunctionLibrary::ImguiCheckbox(const FString& Label, UPARAM(ref) bool& BoolRef)
@@ -40,9 +64,19 @@ bool UImGuiFunctionLibrary::ImguiCheckbox(const FString& Label, UPARAM(ref) bool
 	return ImGui::GetCurrentContext() ? ImGui::Checkbox(TCHAR_TO_ANSI(*Label), &BoolRef) : false;
 }
 
-bool UImGuiFunctionLibrary::ImguiButton(const FString& Label)
+void UImGuiFunctionLibrary::ImguiCheckboxBranched(const FString& Label, bool& BoolRef, EImGuiClickResult& Branches)
 {
-	return ImGui::GetCurrentContext() ? ImGui::Button(TCHAR_TO_ANSI(*Label)) : false;
+	Branches = ImguiCheckbox(Label, BoolRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+}
+
+bool UImGuiFunctionLibrary::ImguiSliderFloat(const FString& Label, UPARAM(ref) float& FloatRef, float Min, float Max)
+{
+	return ImGui::GetCurrentContext() ? ImGui::SliderFloat(TCHAR_TO_ANSI(*Label), &FloatRef, Min, Max) : false;
+}
+
+void UImGuiFunctionLibrary::ImguiSliderFloatBranched(const FString& Label, UPARAM(ref) float& FloatRef, float Min, float Max, EImGuiClickResult& Branches)
+{
+	Branches = ImguiSliderFloat(Label, FloatRef, Min, Max) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
 }
 
 void UImGuiFunctionLibrary::ImguiObject(UObject* InObject, const bool bOpenInNewWindow)
