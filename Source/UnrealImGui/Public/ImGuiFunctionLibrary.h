@@ -18,6 +18,7 @@ enum class EImGuiComponentCount : uint8
 	Four,
 };
 
+//TODO: Proper "Blueprint Demo" in example project
 //TODO: Tooltips
 //TODO: Automatically handle IDs in some intelligent way?
 
@@ -80,7 +81,7 @@ class UImGuiFunctionLibrary : public UBlueprintFunctionLibrary
 
 	//TODO: DragFloat(1, Vec3) + Branched
 
-	//TODO: DragInt(1, Vec3) + Branched
+	//TODO: DragInt(1) + Branched
 
 	UFUNCTION(BlueprintCallable, Category = ImGui)
 	static bool ImguiSliderFloat(const FString& Label, UPARAM(ref) float& FloatRef, float Min, float Max);
@@ -88,17 +89,37 @@ class UImGuiFunctionLibrary : public UBlueprintFunctionLibrary
 	UFUNCTION(BlueprintCallable, Category = ImGui, Meta = (ExpandEnumAsExecs = "Branches", DisplayName="Imgui Slider Float (Branched)"))
 	static void ImguiSliderFloatBranched(const FString& Label, UPARAM(ref) float& FloatRef, float Min, float Max, EImGuiClickResult& Branches);
 
-	//TODO: Imgui Slider Float (Vec3)
+	UFUNCTION(BlueprintCallable, Category = ImGui)
+    static bool ImguiSliderVector(const FString& Label, UPARAM(ref) FVector& VectorRef, float Min, float Max);
+
+	UFUNCTION(BlueprintCallable, Category = ImGui, Meta = (ExpandEnumAsExecs = "Branches", DisplayName="Imgui Slider Vector (Branched)"))
+    static void ImguiSliderVectorBranched(const FString& Label, UPARAM(ref) FVector& VectorRef, float Min, float Max, EImGuiClickResult& Branches);
 
 	//TODO: SliderInt(1, Vec3) + Branched
 	
-	//TODO: InputText
+	//TODO: InputText + Branched
 
-	//TODO: InputFloat, InputFloat3
+	UFUNCTION(BlueprintCallable, Category = ImGui)
+	static bool ImguiInputFloat(const FString& Label, UPARAM(ref) float& FloatRef);
 
-	//TODO: InputInt, InputInt3
+	UFUNCTION(BlueprintCallable, Category = ImGui, Meta = (ExpandEnumAsExecs = "Branches", DisplayName="Imgui Input Float (Branched)"))
+    static void ImguiInputFloatBranched(const FString& Label, UPARAM(ref) float& FloatRef, EImGuiClickResult& Branches);
 
-	//TODO: ColorEdit4 (ColorEdit)
+	UFUNCTION(BlueprintCallable, Category = ImGui)
+    static bool ImguiInputVector(const FString& Label, UPARAM(ref) FVector& VectorRef);
+
+	UFUNCTION(BlueprintCallable, Category = ImGui, Meta = (ExpandEnumAsExecs = "Branches", DisplayName="Imgui Input Vector (Branched)"))
+    static void ImguiInputVectorBranched(const FString& Label, UPARAM(ref) FVector& VectorRef, EImGuiClickResult& Branches);
+
+	//TODO: InputInt (+ Branched) , InputInt3 (+ Branched)
+
+	//TODO: FColor version of ImguiColorEdit (will need to convert to LinearColor?)
+	
+	UFUNCTION(BlueprintCallable, Category = ImGui)
+	static bool ImguiLinearColorEdit(const FString& Label, UPARAM(ref) FLinearColor& ColorRef);
+
+	UFUNCTION(BlueprintCallable, Category = ImGui, Meta = (ExpandEnumAsExecs = "Branches", DisplayName="Imgui Linear Color Edit (Branched)"))
+    static void ImguiLinearColorEditBranched(const FString& Label, UPARAM(ref) FLinearColor& ColorRef, EImGuiClickResult& Branches);
 
 	//TODO: (Later) Trees
 	//TODO: (Later) Menu Bar

@@ -87,6 +87,46 @@ void UImGuiFunctionLibrary::ImguiSliderFloatBranched(const FString& Label, UPARA
 	Branches = ImguiSliderFloat(Label, FloatRef, Min, Max) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
 }
 
+bool UImGuiFunctionLibrary::ImguiSliderVector(const FString& Label, FVector& VectorRef, float Min, float Max)
+{
+	return IMGUI_CALL_WITH_RESULT(ImGui::SliderFloat3(TCHAR_TO_ANSI(*Label), reinterpret_cast<float*>(&VectorRef), Min, Max));
+}
+
+void UImGuiFunctionLibrary::ImguiSliderVectorBranched(const FString& Label, FVector& VectorRef, float Min, float Max, EImGuiClickResult& Branches)
+{
+	Branches = ImguiSliderVector(Label, VectorRef, Min, Max) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+}
+
+bool UImGuiFunctionLibrary::ImguiInputFloat(const FString& Label, float& FloatRef)
+{
+	return IMGUI_CALL_WITH_RESULT(ImGui::InputFloat(TCHAR_TO_ANSI(*Label), &FloatRef));
+}
+
+void UImGuiFunctionLibrary::ImguiInputFloatBranched(const FString& Label, float& FloatRef, EImGuiClickResult& Branches)
+{
+	Branches = ImguiInputFloat(Label, FloatRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+}
+
+bool UImGuiFunctionLibrary::ImguiInputVector(const FString& Label, FVector& VectorRef)
+{
+	return IMGUI_CALL_WITH_RESULT(ImGui::InputFloat(TCHAR_TO_ANSI(*Label), reinterpret_cast<float*>(&VectorRef)));
+}
+
+void UImGuiFunctionLibrary::ImguiInputVectorBranched(const FString& Label, FVector& VectorRef, EImGuiClickResult& Branches)
+{
+	Branches = ImguiInputVector(Label, VectorRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+}
+
+bool UImGuiFunctionLibrary::ImguiLinearColorEdit(const FString& Label, FLinearColor& ColorRef)
+{
+	return IMGUI_CALL_WITH_RESULT(ImGui::ColorEdit4(TCHAR_TO_ANSI(*Label), &ColorRef.R));
+}
+
+void UImGuiFunctionLibrary::ImguiLinearColorEditBranched(const FString& Label, FLinearColor& ColorRef, EImGuiClickResult& Branches)
+{
+	Branches = ImguiLinearColorEdit(Label, ColorRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+}
+
 void UImGuiFunctionLibrary::ImguiObject(UObject* InObject, const bool bOpenInNewWindow)
 {
 	if (ImGui::GetCurrentContext() && InObject != nullptr)
