@@ -1,6 +1,8 @@
 #include "ImGuiFunctionLibrary.h"
 #include "UnrealImGui.h"
 
+//FCS TODO: should TCHAR_TO_ANSI be TCHAR_TO_UTF8
+
 //Helper macro to check ImGui context then call an ImGui function
 #define IMGUI_CALL(imgui_function) \
 if (ImGui::GetCurrentContext())    \
@@ -62,6 +64,29 @@ void UImGuiFunctionLibrary::ImguiText(const FString& Text)
 	IMGUI_CALL(ImGui::Text(TCHAR_TO_ANSI(*Text)));
 }
 
+const int32 TextBufferSlack = 1024;
+
+bool UImGuiFunctionLibrary::ImguiInputString(const FString& Label, FString& InputString)
+{
+	//Create Temporary Text Buffer, with size equal to InputString length plus TextBufferSlack
+	TArray<char> TextBuffer;
+	TextBuffer.Reserve(InputString.Len() + TextBufferSlack);
+	FMemory::Memcpy(TextBuffer.GetData(), TCHAR_TO_ANSI(*InputString), InputString.Len() + 1);
+
+	const bool bChanged = IMGUI_CALL_WITH_RESULT(ImGui::InputText(TCHAR_TO_ANSI(*Label), TextBuffer.GetData(), TextBuffer.GetAllocatedSize()));
+	if (bChanged)
+	{
+		InputString = FString(ANSI_TO_TCHAR(TextBuffer.GetData()));
+	}
+
+	return bChanged;
+}
+
+void UImGuiFunctionLibrary::ImguiInputStringBranched(const FString& Label, FString& InputString, EImGuiClickResult& OutBranches)
+{
+	OutBranches = ImguiInputString(Label, InputString) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+}
+
 bool UImGuiFunctionLibrary::ImguiButton(const FString& Label)
 {
 	return IMGUI_CALL_WITH_RESULT(ImGui::Button(TCHAR_TO_ANSI(*Label)));
@@ -72,9 +97,9 @@ bool UImGuiFunctionLibrary::ImguiCheckbox(const FString& Label, UPARAM(ref) bool
 	return IMGUI_CALL_WITH_RESULT(ImGui::Checkbox(TCHAR_TO_ANSI(*Label), &BoolRef));
 }
 
-void UImGuiFunctionLibrary::ImguiCheckboxBranched(const FString& Label, bool& BoolRef, EImGuiClickResult& Branches)
+void UImGuiFunctionLibrary::ImguiCheckboxBranched(const FString& Label, bool& BoolRef, EImGuiClickResult& OutBranches)
 {
-	Branches = ImguiCheckbox(Label, BoolRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+	OutBranches = ImguiCheckbox(Label, BoolRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
 }
 
 bool UImGuiFunctionLibrary::ImguiSliderFloat(const FString& Label, UPARAM(ref) float& FloatRef, float Min, float Max)
@@ -82,9 +107,9 @@ bool UImGuiFunctionLibrary::ImguiSliderFloat(const FString& Label, UPARAM(ref) f
 	return IMGUI_CALL_WITH_RESULT(ImGui::SliderFloat(TCHAR_TO_ANSI(*Label), &FloatRef, Min, Max));
 }
 
-void UImGuiFunctionLibrary::ImguiSliderFloatBranched(const FString& Label, UPARAM(ref) float& FloatRef, float Min, float Max, EImGuiClickResult& Branches)
+void UImGuiFunctionLibrary::ImguiSliderFloatBranched(const FString& Label, UPARAM(ref) float& FloatRef, float Min, float Max, EImGuiClickResult& OutBranches)
 {
-	Branches = ImguiSliderFloat(Label, FloatRef, Min, Max) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+	OutBranches = ImguiSliderFloat(Label, FloatRef, Min, Max) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
 }
 
 bool UImGuiFunctionLibrary::ImguiSliderVector(const FString& Label, FVector& VectorRef, float Min, float Max)
@@ -92,9 +117,29 @@ bool UImGuiFunctionLibrary::ImguiSliderVector(const FString& Label, FVector& Vec
 	return IMGUI_CALL_WITH_RESULT(ImGui::SliderFloat3(TCHAR_TO_ANSI(*Label), reinterpret_cast<float*>(&VectorRef), Min, Max));
 }
 
-void UImGuiFunctionLibrary::ImguiSliderVectorBranched(const FString& Label, FVector& VectorRef, float Min, float Max, EImGuiClickResult& Branches)
+void UImGuiFunctionLibrary::ImguiSliderVectorBranched(const FString& Label, FVector& VectorRef, float Min, float Max, EImGuiClickResult& OutBranches)
 {
-	Branches = ImguiSliderVector(Label, VectorRef, Min, Max) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+	OutBranches = ImguiSliderVector(Label, VectorRef, Min, Max) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+}
+
+bool UImGuiFunctionLibrary::ImguiSliderInt(const FString& Label, int32& IntRef, int32 Min, int32 Max)
+{
+	return IMGUI_CALL_WITH_RESULT(ImGui::SliderInt(TCHAR_TO_ANSI(*Label), &IntRef, Min, Max));
+}
+
+void UImGuiFunctionLibrary::ImguiSliderIntBranched(const FString& Label, int32& IntRef, int32 Min, int32 Max, EImGuiClickResult& OutBranches)
+{
+	OutBranches = ImguiSliderInt(Label, IntRef, Min, Max) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+}
+
+bool UImGuiFunctionLibrary::ImguiSliderIntVector(const FString& Label, FIntVector& VectorRef, int32 Min, int32 Max)
+{
+	return IMGUI_CALL_WITH_RESULT(ImGui::SliderInt3(TCHAR_TO_ANSI(*Label), reinterpret_cast<int32*>(&VectorRef), Min, Max));
+}
+
+void UImGuiFunctionLibrary::ImguiSliderIntVectorBranched(const FString& Label, FIntVector& VectorRef, int32 Min, int32 Max, EImGuiClickResult& OutBranches)
+{
+	OutBranches = ImguiSliderIntVector(Label, VectorRef, Min, Max) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
 }
 
 bool UImGuiFunctionLibrary::ImguiInputFloat(const FString& Label, float& FloatRef)
@@ -102,9 +147,9 @@ bool UImGuiFunctionLibrary::ImguiInputFloat(const FString& Label, float& FloatRe
 	return IMGUI_CALL_WITH_RESULT(ImGui::InputFloat(TCHAR_TO_ANSI(*Label), &FloatRef));
 }
 
-void UImGuiFunctionLibrary::ImguiInputFloatBranched(const FString& Label, float& FloatRef, EImGuiClickResult& Branches)
+void UImGuiFunctionLibrary::ImguiInputFloatBranched(const FString& Label, float& FloatRef, EImGuiClickResult& OutBranches)
 {
-	Branches = ImguiInputFloat(Label, FloatRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+	OutBranches = ImguiInputFloat(Label, FloatRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
 }
 
 bool UImGuiFunctionLibrary::ImguiInputVector(const FString& Label, FVector& VectorRef)
@@ -112,9 +157,9 @@ bool UImGuiFunctionLibrary::ImguiInputVector(const FString& Label, FVector& Vect
 	return IMGUI_CALL_WITH_RESULT(ImGui::InputFloat(TCHAR_TO_ANSI(*Label), reinterpret_cast<float*>(&VectorRef)));
 }
 
-void UImGuiFunctionLibrary::ImguiInputVectorBranched(const FString& Label, FVector& VectorRef, EImGuiClickResult& Branches)
+void UImGuiFunctionLibrary::ImguiInputVectorBranched(const FString& Label, FVector& VectorRef, EImGuiClickResult& OutBranches)
 {
-	Branches = ImguiInputVector(Label, VectorRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+	OutBranches = ImguiInputVector(Label, VectorRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
 }
 
 bool UImGuiFunctionLibrary::ImguiLinearColorEdit(const FString& Label, FLinearColor& ColorRef)
@@ -122,9 +167,9 @@ bool UImGuiFunctionLibrary::ImguiLinearColorEdit(const FString& Label, FLinearCo
 	return IMGUI_CALL_WITH_RESULT(ImGui::ColorEdit4(TCHAR_TO_ANSI(*Label), &ColorRef.R));
 }
 
-void UImGuiFunctionLibrary::ImguiLinearColorEditBranched(const FString& Label, FLinearColor& ColorRef, EImGuiClickResult& Branches)
+void UImGuiFunctionLibrary::ImguiLinearColorEditBranched(const FString& Label, FLinearColor& ColorRef, EImGuiClickResult& OutBranches)
 {
-	Branches = ImguiLinearColorEdit(Label, ColorRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
+	OutBranches = ImguiLinearColorEdit(Label, ColorRef) ? EImGuiClickResult::Clicked : EImGuiClickResult::NotClicked;
 }
 
 void UImGuiFunctionLibrary::ImguiObject(UObject* InObject, const bool bOpenInNewWindow)

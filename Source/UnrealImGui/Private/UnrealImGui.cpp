@@ -146,13 +146,15 @@ void UnrealImGui::Initialize(UGameViewportClient* InGameViewportClient)
 		const uint32* CharCodePtr;
 		FInputKeyManager::Get().GetCodesFromKey(InputKeyEvent.Key, KeyCodePtr, CharCodePtr);
 
-		if (CharCodePtr != nullptr && InputKeyEvent.Event != IE_Released)
+		const bool bCurrentlyPressed = InputKeyEvent.Event == IE_Pressed || InputKeyEvent.Event == IE_Repeat;
+
+		if (CharCodePtr != nullptr && bCurrentlyPressed)
 		{
 			ImGui::GetIO().AddInputCharacterUTF16(*CharCodePtr);
 		}
-		if (KeyCodePtr != nullptr)
+		if (KeyCodePtr != nullptr) //Don't check bCurrentlyPressed here, so we catch KeyUp events (bCurrentlyPressed == false)
 		{
-			ImGui::GetIO().KeysDown[*KeyCodePtr] = InputKeyEvent.Event == IE_Pressed;
+			ImGui::GetIO().KeysDown[*KeyCodePtr] = bCurrentlyPressed;
 		}
 	});
 
