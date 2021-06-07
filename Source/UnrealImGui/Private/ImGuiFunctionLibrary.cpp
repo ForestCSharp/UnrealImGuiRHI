@@ -177,9 +177,9 @@ void UImGuiFunctionLibrary::ImguiObject(UObject* InObject, const bool bOpenInNew
 {
 	if (ImGui::GetCurrentContext() && InObject != nullptr)
 	{
-		ImGui::PushID(InObject->GetUniqueID());
-
 		if (bOpenInNewWindow) { ImGui::Begin(TCHAR_TO_ANSI(*InObject->GetName())); }
+
+		ImGui::PushID(InObject->GetUniqueID());
 
 		const float Indentation = 16.0f;
 
