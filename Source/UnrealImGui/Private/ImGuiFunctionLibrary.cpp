@@ -175,6 +175,7 @@ void UImGuiFunctionLibrary::ImguiLinearColorEditBranched(const FString& Label, F
 
 void UImGuiFunctionLibrary::ImguiObject(UObject* InObject, const bool bOpenInNewWindow)
 {
+#if WITH_EDITORONLY_DATA
 	if (ImGui::GetCurrentContext() && InObject != nullptr)
 	{
 		if (bOpenInNewWindow) { ImGui::Begin(TCHAR_TO_ANSI(*InObject->GetName())); }
@@ -334,4 +335,5 @@ void UImGuiFunctionLibrary::ImguiObject(UObject* InObject, const bool bOpenInNew
 		ImGui::PopID();
 		if (bOpenInNewWindow) { ImGui::End(); }
 	}
+#endif
 }
