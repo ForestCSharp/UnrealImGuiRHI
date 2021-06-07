@@ -68,6 +68,7 @@ const int32 TextBufferSlack = 1024;
 
 bool UImGuiFunctionLibrary::ImguiInputString(const FString& Label, FString& InputString)
 {
+	//FCS TODO: Better way to handle this
 	//Create Temporary Text Buffer, with size equal to InputString length plus TextBufferSlack
 	TArray<char> TextBuffer;
 	TextBuffer.Reserve(InputString.Len() + TextBufferSlack);

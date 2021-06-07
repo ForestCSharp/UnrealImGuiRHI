@@ -133,11 +133,15 @@ void UnrealImGui::Initialize(UGameViewportClient* InGameViewportClient)
 	
 	ViewportRenderedDelegateHandle = InGameViewportClient->OnViewportRendered().AddLambda([](FViewport* InViewport)
 	{
-		//If CVar true, render
-		if (GShowImGui)
-		{
-			Render_GameThread(InViewport);
-		}
+		//Despite being accesed as a member, this delegate is triggered any time any viewport is rendered, so check that InViewport is the correct viewport
+        if (OwningGameViewportClient.IsValid() && InViewport == OwningGameViewportClient->Viewport)
+        {
+        	//If CVar true, render
+			if (GShowImGui)
+			{
+			    Render_GameThread(InViewport);
+			}
+        }
 	});
 	
 	InputKeyDelegateHandle = InGameViewportClient->OnInputKey().AddLambda([](const FInputKeyEventArgs& InputKeyEvent)
