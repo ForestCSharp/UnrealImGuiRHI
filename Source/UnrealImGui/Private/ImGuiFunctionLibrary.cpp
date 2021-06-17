@@ -64,23 +64,36 @@ void UImGuiFunctionLibrary::ImguiText(const FString& Text)
 	IMGUI_CALL(ImGui::Text(TCHAR_TO_ANSI(*Text)));
 }
 
-const int32 TextBufferSlack = 1024;
+struct FInputStringCallbackUserData
+{
+	FString* String;
+};
+
+static int InputStringCallback(ImGuiInputTextCallbackData* CallbackData)
+{
+	FInputStringCallbackUserData* UserData = static_cast<FInputStringCallbackUserData*>(CallbackData->UserData);
+	FString* String = UserData->String;
+	check(String != nullptr);
+	
+	if (CallbackData->EventFlag == ImGuiInputTextFlags_CallbackEdit)
+	{
+		*String = FString(CallbackData->Buf);
+	}
+	return 0;
+}
 
 bool UImGuiFunctionLibrary::ImguiInputString(const FString& Label, FString& InputString)
 {
-	//FCS TODO: Better way to handle this
-	//Create Temporary Text Buffer, with size equal to InputString length plus TextBufferSlack
-	TArray<char> TextBuffer;
-	TextBuffer.Reserve(InputString.Len() + TextBufferSlack);
-	FMemory::Memcpy(TextBuffer.GetData(), TCHAR_TO_ANSI(*InputString), InputString.Len() + 1);
+	//We require the CallbackResize flag so that STB_TEXTEDIT_INSERTCHARS will report we've edited the string
+	//We don't need to implement the Resize in our callback, as DearImGui stores their own persistent buffer internally
+	const ImGuiInputTextFlags InputTextFlags = ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_CallbackEdit;
 
-	const bool bChanged = IMGUI_CALL_WITH_RESULT(ImGui::InputText(TCHAR_TO_ANSI(*Label), TextBuffer.GetData(), TextBuffer.GetAllocatedSize()));
-	if (bChanged)
-	{
-		InputString = FString(ANSI_TO_TCHAR(TextBuffer.GetData()));
-	}
+	FInputStringCallbackUserData UserData;
+	UserData.String = &InputString;
 
-	return bChanged;
+	return IMGUI_CALL_WITH_RESULT(ImGui::InputText(TCHAR_TO_ANSI(*Label), TCHAR_TO_ANSI(*InputString),
+		InputString.Len() + 1, InputTextFlags, InputStringCallback, &UserData)
+	);
 }
 
 void UImGuiFunctionLibrary::ImguiInputStringBranched(const FString& Label, FString& InputString, EImGuiClickResult& OutBranches)
