@@ -41,7 +41,7 @@ class FImGuiVS : public FGlobalShader
         return true;
     }
 
-	void SetProjectionMatrix(FRHICommandList& RHICmdList, const FMatrix& InMatrix, const ERHIFeatureLevel::Type FeatureLevel) const
+	void SetProjectionMatrix(FRHICommandList& RHICmdList, const FMatrix44f& InMatrix, const ERHIFeatureLevel::Type FeatureLevel) const
     {
     	const auto GlobalShaderMap = GetGlobalShaderMap(FeatureLevel);
     	const TShaderMapRef<FImGuiVS> VertexShader(GlobalShaderMap); //FCS FIXME: Shouldn't need to do this
@@ -107,15 +107,6 @@ namespace UnrealImGui
 		ImVec2          DisplaySize;            // Size of the viewport to render (== io.DisplaySize for the main viewport) (DisplayPos + DisplaySize == lower-right of the orthogonal projection matrix to use)
 		ImVec2          FramebufferScale;       // Amount of pixels for each unit of DisplaySize. Based on io.DisplayFramebufferScale. Generally (1,1) on normal display, (2,2) on OSX with Retina display.
 	};
-
-	UNREAL_IMGUI_API bool GShowImGui = true;
-	static FAutoConsoleVariableRef CVarShowImGui = FAutoConsoleVariableRef(
-        TEXT("imgui.show"),
-        GShowImGui,
-        TEXT("If enabled, shows ImGui Debug UI\n")
-        TEXT("0: Disable, 1: Show"),
-        ECVF_Cheat
-    );
 	
 	void UNREAL_IMGUI_API Initialize(UGameViewportClient* InGameViewportClient);
 	void Initialize_RenderThread(FRHICommandListImmediate& RHICmdList, const TArray<unsigned char>& FontTextureData, int32 Width, int32 Height);

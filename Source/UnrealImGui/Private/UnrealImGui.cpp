@@ -2,15 +2,26 @@
 
 #include "UnrealImGui.h"
 #include "Interfaces/IPluginManager.h"
-// #include "Core/Public/Misc/CoreDelegates.h"
 
-#define IMGUI_IMPLEMENTATION
 #include "Kismet/GameplayStatics.h"
+#define IMGUI_IMPLEMENTATION
 #include "ThirdParty/ImGui/misc/single_file/imgui_single_file.h"
 
 #define LOCTEXT_NAMESPACE "FUnrealImGuiModule"
 
 DEFINE_LOG_CATEGORY(LogUnrealImGui);
+
+namespace UnrealImGui
+{
+	static bool GShowImGui = true;
+	static FAutoConsoleVariableRef CVarShowImGui = FAutoConsoleVariableRef(
+		TEXT("imgui.show"),
+		GShowImGui,
+		TEXT("If enabled, shows ImGui Debug UI\n")
+		TEXT("0: Disable, 1: Show"),
+		ECVF_Cheat
+	);
+}
 
 void FUnrealImGuiModule::StartupModule()
 {
@@ -35,8 +46,8 @@ static FDelegateHandle CloseRequestedDelegateHandle;
 //END GameThread Globals
 
 //BEGIN RenderThread Globals
-FVertexBufferRHIRef ImguiVertexBuffer;
-FIndexBufferRHIRef ImguiIndexBuffer;
+FBufferRHIRef ImguiVertexBuffer;
+FBufferRHIRef ImguiIndexBuffer;
 FTexture2DRHIRef ImGuiFontTexture;
 FSamplerStateRHIRef ImGuiFontSampler;
 //END RenderThread Globals
@@ -56,7 +67,7 @@ void UnrealImGui::Initialize(UGameViewportClient* InGameViewportClient)
 	ImGuiContextPtr = ImGui::CreateContext();
 	OwningGameViewportClient = InGameViewportClient;
 	
-	ImGuiIO& IO = ImGui::GetIO();
+	const ImGuiIO& IO = ImGui::GetIO();
 
 	//Setup Keymap (Map EKeys to ImGui Keys)
 	auto ImGuiKeyMap = [&](const ImGuiKey_ ImGuiKey, const FKey& UnrealKey)
@@ -173,13 +184,18 @@ void UnrealImGui::Initialize(UGameViewportClient* InGameViewportClient)
 
 void UnrealImGui::Initialize_RenderThread(FRHICommandListImmediate& RHICmdList, const TArray<unsigned char>& FontTextureData, int32 Width, int32 Height)
 {	
-	const size_t UploadSize = FontTextureData.Num() * sizeof(char);
-	FRHIResourceCreateInfo FontTextureCreateInfo;
-	FontTextureCreateInfo.DebugName = TEXT("ImGuiFontTexture");
-	ImGuiFontTexture = RHICreateTexture2D(Width, Height, PF_R8G8B8A8, 1, 1, TexCreate_ShaderResource, FontTextureCreateInfo);
+	FRHITextureCreateDesc TextureCreateDesc = {};
+	TextureCreateDesc.SetExtent(Width, Height);
+	TextureCreateDesc.SetFormat(PF_R8G8B8A8);
+	TextureCreateDesc.SetNumMips(1);
+	TextureCreateDesc.SetNumSamples(1);
+	TextureCreateDesc.SetFlags(TexCreate_ShaderResource);
+	TextureCreateDesc.SetDebugName(TEXT("ImGuiFontTexture"));
+	ImGuiFontTexture = RHICreateTexture(TextureCreateDesc);
 
 	uint32 _DestStride;
 	unsigned char* TexDst = static_cast<unsigned char*>(RHICmdList.LockTexture2D(ImGuiFontTexture, 0, RLM_WriteOnly, _DestStride, false));
+	const size_t UploadSize = FontTextureData.Num() * sizeof(char);
 	FMemory::Memcpy(TexDst, FontTextureData.GetData(), UploadSize);
 	RHICmdList.UnlockTexture2D(ImGuiFontTexture, 0, false);
 
@@ -210,7 +226,7 @@ void UnrealImGui::Render_GameThread(const FViewport* const Viewport)
 		return;
 	}
 
-	UWorld* World = OwningGameViewportClient->GetWorld() != nullptr ? OwningGameViewportClient->GetWorld() : GWorld;
+	const UWorld* World = OwningGameViewportClient->GetWorld() != nullptr ? OwningGameViewportClient->GetWorld() : GWorld;
 	if (World == nullptr)
 	{
 		UE_LOG(LogUnrealImGui, Error, TEXT("Attempting to render UnrealImGui with invalid UWorld"));
@@ -242,7 +258,7 @@ void UnrealImGui::Render_GameThread(const FViewport* const Viewport)
 	
 	ImGui::Render();
 	
-	ImDrawData* ImGuiDrawData = ImGui::GetDrawData();
+	const ImDrawData* ImGuiDrawData = ImGui::GetDrawData();
 	if (!ImGuiDrawData || ImGuiDrawData->TotalVtxCount == 0)
 	{
 		return;
@@ -280,20 +296,18 @@ void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHI
 	//Create/Resize Vertex Buffer
 	const int32 VertexCount = ImGuiDrawData.TotalVtxCount;
 	size_t VertexBufferSize = VertexCount * sizeof(ImDrawVert);
-	FRHIResourceCreateInfo VertexBufferCreateInfo;
-	VertexBufferCreateInfo.DebugName = TEXT("ImGuiVertexBuffer");
+	FRHIResourceCreateInfo VertexBufferCreateInfo(TEXT("ImGuiVertexBuffer"));
 	ImguiVertexBuffer = RHICreateVertexBuffer(VertexBufferSize, BUF_Dynamic, VertexBufferCreateInfo);
 	
 	//Create/Resize Index Buffer
 	const int32 IndexCount = ImGuiDrawData.TotalIdxCount;
 	size_t IndexBufferSize = IndexCount * sizeof(ImDrawIdx);
-	FRHIResourceCreateInfo IndexBufferCreateInfo;
-	IndexBufferCreateInfo.DebugName = TEXT("ImGuiIndexBuffer");
+	FRHIResourceCreateInfo IndexBufferCreateInfo(TEXT("ImGuiIndexBuffer"));
 	ImguiIndexBuffer = RHICreateIndexBuffer(sizeof(ImDrawIdx), IndexBufferSize, BUF_Dynamic, IndexBufferCreateInfo);
 
 	{
-		ImDrawVert* VtxDst = static_cast<ImDrawVert*>(RHICmdList.LockVertexBuffer(ImguiVertexBuffer, 0, VertexBufferSize, RLM_WriteOnly));
-		ImDrawIdx*  IdxDst = static_cast<ImDrawIdx*>(RHICmdList.LockIndexBuffer(ImguiIndexBuffer, 0, IndexBufferSize, RLM_WriteOnly));
+		ImDrawVert* VtxDst = static_cast<ImDrawVert*>(RHICmdList.LockBuffer(ImguiVertexBuffer, 0, VertexBufferSize, RLM_WriteOnly));
+		ImDrawIdx*  IdxDst = static_cast<ImDrawIdx*>(RHICmdList.LockBuffer(ImguiIndexBuffer, 0, IndexBufferSize, RLM_WriteOnly));
 
 		for (const auto& CmdList : ImGuiDrawData.CmdLists)
 		{
@@ -304,8 +318,8 @@ void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHI
 			IdxDst += CmdList.IdxBuffer.Size;
 		}
 		
-		RHICmdList.UnlockVertexBuffer(ImguiVertexBuffer);
-		RHICmdList.UnlockIndexBuffer(ImguiIndexBuffer);
+		RHICmdList.UnlockBuffer(ImguiVertexBuffer);
+		RHICmdList.UnlockBuffer(ImguiIndexBuffer);
 	}
 	
 	// Get the collection of Global Shaders
@@ -317,6 +331,7 @@ void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHI
 	// Declare a pipeline state object that holds all the rendering state
 	FGraphicsPipelineStateInitializer PSOInitializer;
 	PSOInitializer.RenderTargetsEnabled = 1;
+	PSOInitializer.NumSamples = RenderTargetTexture->GetNumSamples();
 	PSOInitializer.RenderTargetFormats[0] = RenderTargetTexture->GetFormat();
 	PSOInitializer.RenderTargetFlags[0] = RenderTargetTexture->GetFlags();
 
@@ -347,7 +362,8 @@ void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHI
         >::GetRHI();
 		PSOInitializer.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
 
-		SetGraphicsPipelineState(RHICmdList, PSOInitializer);
+		//FCS TODO: FIXME: D3D12 Crashing on PSO Creation. D3D11 and Vulkan seemingly fine
+		SetGraphicsPipelineState(RHICmdList, PSOInitializer, 0);
 
 		// Setup Our Parameters. This has to happen after SetGraphicsPipelineState
 		{
@@ -357,11 +373,11 @@ void UnrealImGui::Render_RenderThread(FRHICommandListImmediate& RHICmdList, ERHI
 			const float T = ImGuiDrawData.DisplayPos.y;
 			const float B = ImGuiDrawData.DisplayPos.y + ImGuiDrawData.DisplaySize.y;
 
-			const FMatrix OrthographicProjection(
-                FPlane(2.0f/(R-L),   0.0f,           0.0f,       0.0f),
-                FPlane(0.0f,         2.0f/(T-B),     0.0f,       0.0f),
-                FPlane(0.0f,         0.0f,           0.5f,       0.0f),
-                FPlane((R+L)/(L-R),  (T+B)/(B-T),    0.5f,       1.0f)
+			const FMatrix44f OrthographicProjection(
+                FPlane4f(2.0f/(R-L),   0.0f,           0.0f,       0.0f),
+				FPlane4f(0.0f,         2.0f/(T-B),     0.0f,       0.0f),
+				FPlane4f(0.0f,         0.0f,           0.5f,       0.0f),
+				FPlane4f((R+L)/(L-R),  (T+B)/(B-T),    0.5f,       1.0f)
             );
 
 			MyVS->SetProjectionMatrix(RHICmdList, OrthographicProjection.GetTransposed(), FeatureLevel);
